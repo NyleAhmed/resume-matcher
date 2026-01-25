@@ -212,23 +212,32 @@
     window.__missingTerms = missing;
   }
 
-  async function analyze() {
-    const pdfFile = document.getElementById("resumePdf").files[0];
-    const jdRaw = document.getElementById("jd").value.trim();
-    const resumeRaw = document.getElementById("resume").value.trim();
+async function analyze() {
+  const pdfFile = document.getElementById("resumePdf").files[0];
+  const jdRaw = document.getElementById("jd").value.trim();
+  const resumeEl = document.getElementById("resume");
+  const resumeRaw = resumeEl.value.trim();
 
-    if (!jdRaw) return alert("Paste a Job Description first.");
+  if (!jdRaw) return alert("Paste a Job Description first.");
 
-    // If PDF is selected, use it. Else use textarea resume.
-    if (pdfFile) {
-      const data = await analyzeViaBackendPdf();
-      renderAnalyzeResult(data);
-      return;
+  // PDF selected → analyze via backend PDF and auto-fill resume box
+  if (pdfFile) {
+    const data = await analyzeViaBackendPdf();
+
+    // ✅ NEW: auto-fill resume textarea from PDF extraction
+    if (data.resume_text && typeof data.resume_text === "string") {
+      resumeEl.value = data.resume_text;
     }
-    if (!resumeRaw) return alert("Paste your resume OR upload a PDF.");
-    const data = await analyzeViaBackendText();
+
     renderAnalyzeResult(data);
+    return;
   }
+
+  // No PDF → fallback to pasted resume text
+  if (!resumeRaw) return alert("Paste your resume OR upload a PDF.");
+  const data = await analyzeViaBackendText();
+  renderAnalyzeResult(data);
+}
 
   async function getAiSuggestions() {
     const aiStatus = document.getElementById("aiStatus");
@@ -241,11 +250,32 @@
 
     // If user uploaded PDF and resume textarea is empty, it's okay — they can still click after Analyze.
     // But AI endpoint needs resume text; easiest path: require resume text present OR tell them to paste it.
-    if (!resume) {
-      // If they already analyzed with PDF, they might not have resume text. Tell them:
-      alert("For AI Suggestions: paste your resume text in the Resume box (or add a 'extract+fill' feature next).");
+if (!resume) {
+  const pdfFile = document.getElementById("resumePdf").files[0];
+
+  // ✅ NEW: if PDF exists, extract text automatically
+  if (pdfFile) {
+    setStatus(aiStatus, `<span class="spinner"></span> Extracting resume from PDF...`);
+    aiOut.innerHTML = "";
+
+    const data = await analyzeViaBackendPdf();
+
+    if (data.resume_text && typeof data.resume_text === "string" && data.resume_text.trim()) {
+      resume = data.resume_text.trim();
+      document.getElementById("resume").value = resume;
+
+      // Optional: refresh keyword results too
+      renderAnalyzeResult(data);
+
+    } else {
+      setStatus(aiStatus, `<div class="warn">Could not extract text from this PDF. Try exporting a text-based PDF.</div>`);
       return;
     }
+  } else {
+    alert("Upload a PDF resume first (or paste resume text).");
+    return;
+  }
+}
 
     setStatus(aiStatus, `<span class="spinner"></span> Generating suggestions...`);
     aiOut.innerHTML = "";
