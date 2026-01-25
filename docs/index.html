@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Resume Keyword Matcher (Python + PDF Upload)</title>
+  <title>Resume Keyword Matcher</title>
   <style>
     body { font-family: system-ui, Arial; margin: 24px; line-height: 1.4; }
     h1 { margin-bottom: 6px; }
@@ -22,8 +22,10 @@
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
     .score { font-size: 22px; font-weight: 700; }
     .small { font-size: 12px; color: #666; }
-    .err { color: #b00020; margin-top: 8px; }
-    .fileBox { margin-top: 10px; padding: 10px; border: 1px dashed #bbb; border-radius: 10px; }
+    .warn { color: #7c2d12; background:#fff7ed; border:1px solid #fed7aa; padding:10px; border-radius:10px; }
+    .success { color: #14532d; background:#f0fdf4; border:1px solid #bbf7d0; padding:10px; border-radius:10px; }
+    .spinner { display:inline-block; width:14px; height:14px; border:2px solid #ccc; border-top-color:#333; border-radius:50%; animation:spin 1s linear infinite; vertical-align:middle; }
+    @keyframes spin { to { transform:rotate(360deg); } }
     @media (max-width: 900px) {
       .grid { grid-template-columns: 1fr; }
       .cards { grid-template-columns: 1fr; }
@@ -32,7 +34,12 @@
 </head>
 <body>
   <h1>Resume Keyword Matcher</h1>
-  <p class="muted">Paste a job description + resume OR upload a PDF resume. Analysis runs on a Python backend (TF-IDF).</p>
+  <p class="muted">Paste a job description and your resume. This finds important terms from the job post and checks which ones appear in your resume.</p>
+
+  <div class="warn">
+    <b>Backend required:</b> This site (GitHub Pages) calls your Render API for analysis + PDF upload + AI suggestions.
+    <div class="small">If buttons do nothing, make sure API_BASE is correct and your Render service is live.</div>
+  </div>
 
   <div class="grid">
     <div>
@@ -41,21 +48,19 @@
     </div>
     <div>
       <h3>Resume</h3>
-      <textarea id="resume" placeholder="Paste your resume here... (or upload a PDF below)"></textarea>
+      <textarea id="resume" placeholder="Paste your resume here..."></textarea>
 
-      <div class="fileBox">
-        <div class="small" style="margin-bottom:6px;"><b>Or upload PDF resume</b> (recommended)</div>
+      <div style="margin-top:10px;">
+        <label class="small" style="display:block; margin-bottom:6px;">Or upload resume PDF</label>
         <input id="resumePdf" type="file" accept="application/pdf" />
-        <div class="small" style="margin-top:6px;">
-          If a PDF is uploaded, it will be used instead of the pasted resume text.
-          If your PDF is a scanned image (not selectable text), extraction may fail.
-        </div>
+        <div class="small">PDF upload uses your backend to extract text.</div>
       </div>
     </div>
   </div>
 
   <div class="row">
     <button id="analyzeBtn">Analyze</button>
+    <button id="aiBtn">Get AI Suggestions</button>
     <button id="clearBtn">Clear</button>
     <button id="copyMissingBtn">Copy Missing</button>
 
@@ -74,8 +79,6 @@
       Include 2-word phrases
     </label>
   </div>
-
-  <div class="err" id="errMsg"></div>
 
   <div class="cards">
     <div class="card">
@@ -106,12 +109,25 @@
     </div>
   </div>
 
-<script>
-  window.__missingTerms = [];
+  <div class="card" style="margin-top:16px;">
+    <h3 style="margin-top:0;">🤖 AI Suggestions</h3>
+    <div class="small" style="margin-bottom:10px;">
+      Uses ChatGPT to recommend improvements + bullet rewrites. (Requires OPENAI_API_KEY set on your backend.)
+    </div>
+    <div id="aiStatus" class="small"></div>
+    <div id="aiOut" style="margin-top:10px;"></div>
+  </div>
 
-  // Backend URL
+<script>
+  // ✅ IMPORTANT: Put your Render backend base URL here (NO trailing slash)
+  // Example: https://resume-matcher-whj0.onrender.com
   const API_BASE = "https://resume-matcher-whj0.onrender.com";
 
+  window.__missingTerms = [];
+
+  // -------------------------
+  // UI helpers
+  // -------------------------
   function makePills(container, items, className) {
     container.innerHTML = "";
     if (!items.length) {
@@ -126,103 +142,225 @@
     }
   }
 
-  async function analyze() {
+  function setStatus(el, html) {
+    el.innerHTML = html || "";
+  }
+
+  function escapeHtml(s) {
+    return (s || "").replace(/[&<>"']/g, (c) => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[c]));
+  }
+
+  // -------------------------
+  // Backend calls
+  // -------------------------
+  async function analyzeViaBackendText() {
     const jdRaw = document.getElementById("jd").value;
     const resumeRaw = document.getElementById("resume").value;
-    const pdfFile = document.getElementById("resumePdf").files[0];
 
     const minLen = parseInt(document.getElementById("minLen").value, 10) || 3;
     const topN = parseInt(document.getElementById("topN").value, 10) || 40;
     const includeBigrams = document.getElementById("includeBigrams").checked;
 
-    document.getElementById("errMsg").textContent = "";
-
-    if (!jdRaw.trim()) {
-      document.getElementById("errMsg").textContent = "Please paste a job description.";
-      return;
-    }
-
-    if (!pdfFile && !resumeRaw.trim()) {
-      document.getElementById("errMsg").textContent = "Please paste a resume OR upload a PDF resume.";
-      return;
-    }
-
-    try {
-      let res;
-
-      if (pdfFile) {
-        // multipart form data to /analyze_pdf
-        const fd = new FormData();
-        fd.append("jd", jdRaw);
-        fd.append("minLen", String(minLen));
-        fd.append("topN", String(topN));
-        fd.append("includeBigrams", String(includeBigrams));
-        fd.append("resume_pdf", pdfFile);
-
-        res = await fetch(`${API_BASE}/analyze_pdf`, {
-          method: "POST",
-          body: fd
-        });
-      } else {
-        // JSON to /analyze
-        res = await fetch(`${API_BASE}/analyze`, {
-          method: "POST",
-          headers: {"Content-Type":"application/json"},
-          body: JSON.stringify({
-            jd: jdRaw,
-            resume: resumeRaw,
-            minLen,
-            topN,
-            includeBigrams
-          })
-        });
-      }
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Backend error (${res.status}): ${text}`);
-      }
-
-      const data = await res.json();
-
-      if (pdfFile && data.total === 0) {
-        document.getElementById("errMsg").textContent =
-          "Your PDF might be a scanned image (no selectable text), so extraction returned nothing. Try a text-based PDF (export from Google Docs/Word) or paste your resume text.";
-      }
-
-      document.getElementById("score").textContent = `${data.scorePct}%`;
-      document.getElementById("scoreDetail").textContent = `${data.found.length} / ${data.total} key terms matched`;
-
-      document.getElementById("foundCount").textContent = data.found.length;
-      document.getElementById("missingCount").textContent = data.missing.length;
-
-      makePills(document.getElementById("foundList"), data.found, "ok");
-      makePills(document.getElementById("missingList"), data.missing, "no");
-
-      window.__missingTerms = data.missing;
-
-    } catch (err) {
-      console.error(err);
-      document.getElementById("errMsg").textContent =
-        "Could not reach the Python backend. Make sure it is running at http://127.0.0.1:8000 (uvicorn main:app --reload).";
-    }
+    const res = await fetch(`${API_BASE}/analyze`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ jd: jdRaw, resume: resumeRaw, minLen, topN, includeBigrams })
+    });
+    if (!res.ok) throw new Error("Analyze failed");
+    return await res.json();
   }
 
-  document.getElementById("analyzeBtn").addEventListener("click", analyze);
+  async function analyzeViaBackendPdf() {
+    const jdRaw = document.getElementById("jd").value;
+
+    const minLen = parseInt(document.getElementById("minLen").value, 10) || 3;
+    const topN = parseInt(document.getElementById("topN").value, 10) || 40;
+    const includeBigrams = document.getElementById("includeBigrams").checked;
+
+    const pdfFile = document.getElementById("resumePdf").files[0];
+    if (!pdfFile) throw new Error("No PDF selected");
+
+    const form = new FormData();
+    form.append("jd", jdRaw);
+    form.append("minLen", String(minLen));
+    form.append("topN", String(topN));
+    form.append("includeBigrams", String(includeBigrams));
+    form.append("resume_pdf", pdfFile);
+
+    const res = await fetch(`${API_BASE}/analyze_pdf`, { method:"POST", body: form });
+    if (!res.ok) throw new Error("Analyze PDF failed");
+    return await res.json();
+  }
+
+  function renderAnalyzeResult(data) {
+    const found = data.found || [];
+    const missing = data.missing || [];
+    const total = (data.keywords || []).length || (found.length + missing.length) || 1;
+    const scorePct = data.scorePct ?? Math.round((found.length / total) * 100);
+
+    document.getElementById("score").textContent = `${scorePct}%`;
+    document.getElementById("scoreDetail").textContent = `${found.length} / ${total} key terms matched`;
+
+    document.getElementById("foundCount").textContent = found.length;
+    document.getElementById("missingCount").textContent = missing.length;
+
+    makePills(document.getElementById("foundList"), found, "ok");
+    makePills(document.getElementById("missingList"), missing, "no");
+
+    window.__missingTerms = missing;
+  }
+
+  async function analyze() {
+    const pdfFile = document.getElementById("resumePdf").files[0];
+    const jdRaw = document.getElementById("jd").value.trim();
+    const resumeRaw = document.getElementById("resume").value.trim();
+
+    if (!jdRaw) return alert("Paste a Job Description first.");
+
+    // If PDF is selected, use it. Else use textarea resume.
+    if (pdfFile) {
+      const data = await analyzeViaBackendPdf();
+      renderAnalyzeResult(data);
+      return;
+    }
+    if (!resumeRaw) return alert("Paste your resume OR upload a PDF.");
+    const data = await analyzeViaBackendText();
+    renderAnalyzeResult(data);
+  }
+
+  async function getAiSuggestions() {
+    const aiStatus = document.getElementById("aiStatus");
+    const aiOut = document.getElementById("aiOut");
+
+    const jd = document.getElementById("jd").value.trim();
+    let resume = document.getElementById("resume").value.trim();
+
+    if (!jd) return alert("Paste a Job Description first.");
+
+    // If user uploaded PDF and resume textarea is empty, it's okay — they can still click after Analyze.
+    // But AI endpoint needs resume text; easiest path: require resume text present OR tell them to paste it.
+    if (!resume) {
+      // If they already analyzed with PDF, they might not have resume text. Tell them:
+      alert("For AI Suggestions: paste your resume text in the Resume box (or add a 'extract+fill' feature next).");
+      return;
+    }
+
+    setStatus(aiStatus, `<span class="spinner"></span> Generating suggestions...`);
+    aiOut.innerHTML = "";
+
+    const payload = {
+      jd,
+      resume,
+      missing: window.__missingTerms || [],
+      level: "intern",
+      tone: "confident",
+      max_bullets: 6
+    };
+
+    const res = await fetch(`${API_BASE}/suggest`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(aiStatus, `<div class="warn">AI request failed. Check your backend logs on Render.</div>`);
+      return;
+    }
+
+    // Backend returns { ok: true, data: {...} } OR an error object
+    if (data.error) {
+      setStatus(aiStatus, `<div class="warn"><b>${escapeHtml(data.error)}</b><br><span class="small">${escapeHtml(data.how_to_fix || "")}</span></div>`);
+      return;
+    }
+
+    setStatus(aiStatus, `<div class="success">Done ✅</div>`);
+
+    const out = data.data || {};
+    if (out.raw) {
+      aiOut.innerHTML = `<pre class="mono" style="white-space:pre-wrap;">${escapeHtml(out.raw)}</pre>`;
+      return;
+    }
+
+    // Pretty render JSON keys
+    aiOut.innerHTML = `
+      <div><b>${escapeHtml(out.headline || "Suggestions")}</b></div>
+      <div style="margin-top:8px;"><b>Overall feedback</b><div class="small">${escapeHtml(out.overall_feedback || "")}</div></div>
+
+      <div style="margin-top:10px;"><b>Top gaps</b>
+        <ul class="small">
+          ${(out.top_gaps || []).map(x => `<li>${escapeHtml(x)}</li>`).join("")}
+        </ul>
+      </div>
+
+      <div style="margin-top:10px;"><b>Keyword plan</b>
+        <ul class="small">
+          ${(out.keyword_plan || []).map(x => `<li>${escapeHtml(x)}</li>`).join("")}
+        </ul>
+      </div>
+
+      <div style="margin-top:10px;"><b>Rewrite examples</b>
+        ${(out.rewrite_examples || []).map(pair => `
+          <div class="card" style="margin-top:8px;">
+            <div class="small"><b>BEFORE</b></div>
+            <div class="mono" style="white-space:pre-wrap;">${escapeHtml(pair.before || "")}</div>
+            <div class="small" style="margin-top:6px;"><b>AFTER</b></div>
+            <div class="mono" style="white-space:pre-wrap;">${escapeHtml(pair.after || "")}</div>
+            <div class="small" style="margin-top:6px;"><b>Why</b> ${escapeHtml(pair.why_it_works || "")}</div>
+          </div>
+        `).join("")}
+      </div>
+
+      <div style="margin-top:10px;"><b>ATS checks</b>
+        <ul class="small">
+          ${(out.ats_checks || []).map(x => `<li>${escapeHtml(x)}</li>`).join("")}
+        </ul>
+      </div>
+
+      <div style="margin-top:10px;"><b>Next steps</b>
+        <ol class="small">
+          ${(out.next_steps || []).map(x => `<li>${escapeHtml(x)}</li>`).join("")}
+        </ol>
+      </div>
+    `;
+  }
+
+  // -------------------------
+  // Events
+  // -------------------------
+  document.getElementById("analyzeBtn").addEventListener("click", async () => {
+    try {
+      await analyze();
+    } catch (e) {
+      alert("Analyze failed. Check API_BASE and Render logs.");
+      console.error(e);
+    }
+  });
+
+  document.getElementById("aiBtn").addEventListener("click", async () => {
+    try {
+      await getAiSuggestions();
+    } catch (e) {
+      alert("AI suggestions failed. Check Render logs + OPENAI_API_KEY.");
+      console.error(e);
+    }
+  });
 
   document.getElementById("clearBtn").addEventListener("click", () => {
     document.getElementById("jd").value = "";
     document.getElementById("resume").value = "";
     document.getElementById("resumePdf").value = "";
-
     document.getElementById("score").textContent = "—";
     document.getElementById("scoreDetail").textContent = "";
     document.getElementById("foundCount").textContent = "—";
     document.getElementById("missingCount").textContent = "—";
     document.getElementById("foundList").innerHTML = "";
     document.getElementById("missingList").innerHTML = "";
-    document.getElementById("errMsg").textContent = "";
-
+    document.getElementById("aiStatus").innerHTML = "";
+    document.getElementById("aiOut").innerHTML = "";
     window.__missingTerms = [];
   });
 
