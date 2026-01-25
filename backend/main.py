@@ -2,7 +2,8 @@ import os
 import re
 import json
 from typing import List, Dict, Any, Optional
-
+import io
+from fastapi import Form
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -106,7 +107,8 @@ class AnalyzeResponse(BaseModel):
     found: List[str]
     missing: List[str]
     keywords: List[str]
-
+class AnalyzePdfResponse(AnalyzeResponse):
+    resume_text: str
 class SuggestRequest(BaseModel):
     jd: str = Field(..., description="Job description text")
     resume: str = Field(..., description="Resume text")
@@ -154,24 +156,41 @@ def analyze(req: AnalyzeRequest):
         keywords=keywords
     )
 
-@app.post("/analyze_pdf", response_model=AnalyzeResponse)
+@app.post("/analyze_pdf", response_model=AnalyzePdfResponse)
 async def analyze_pdf(
-    jd: str,
-    minLen: int = 3,
-    topN: int = 40,
-    includeBigrams: bool = True,
+    jd: str = Form(...),
+    minLen: int = Form(3),
+    topN: int = Form(40),
+    includeBigrams: bool = Form(True),
     resume_pdf: UploadFile = File(...)
 ):
     # Extract text from PDF
     data = await resume_pdf.read()
-    reader = PdfReader(io_bytes := __import__("io").BytesIO(data))
+    reader = PdfReader(io.BytesIO(data))
+
     pages_text = []
     for p in reader.pages:
         pages_text.append(p.extract_text() or "")
-    resume_text = "\n".join(pages_text)
+    resume_text = "\n".join(pages_text).strip()
 
-    req = AnalyzeRequest(jd=jd, resume=resume_text, minLen=minLen, topN=topN, includeBigrams=includeBigrams)
-    return analyze(req)
+    req = AnalyzeRequest(
+        jd=jd,
+        resume=resume_text,
+        minLen=minLen,
+        topN=topN,
+        includeBigrams=includeBigrams
+    )
+
+    result = analyze(req)  # returns AnalyzeResponse
+
+    # Return result + extracted resume text
+    return AnalyzePdfResponse(
+        scorePct=result.scorePct,
+        found=result.found,
+        missing=result.missing,
+        keywords=result.keywords,
+        resume_text=resume_text
+    )
 
 @app.post("/suggest")
 def suggest(req: SuggestRequest) -> Dict[str, Any]:
