@@ -26,14 +26,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://nyleahmed.github.io",
-        "http://localhost:5500",
-        "http://127.0.0.1:5500",
     ],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # -------------------------
 # OpenAI Client
 # -------------------------
@@ -207,65 +204,54 @@ def suggest(req: SuggestRequest) -> Dict[str, Any]:
             "how_to_fix": "Set OPENAI_API_KEY in your Render Environment Variables and redeploy."
         }
 
-    # Basic size guard (avoid accidentally sending huge PDFs)
     if len(req.jd) > 50000 or len(req.resume) > 50000:
-        return {"error": "Input too large. Please paste less text / use a shorter resume extract."}
+        return {"error": "Input too large. Please paste less text."}
 
-    missing_list = req.missing[:80]  # keep it sane
+    missing_list = req.missing[:80]
 
-    system = (
-        "You are an expert ATS-friendly resume coach and recruiter. "
-        "You give specific, actionable improvements without lying or inventing experience. "
-        "If the user lacks a skill, suggest phrasing that shows learning/projects instead of claiming it."
-    )
+    prompt = f"""
+You are an expert ATS-friendly resume coach and recruiter.
 
-    # Ask for STRICT JSON so frontend can render nicely
-    user = {
-        "task": "Review resume vs job description. Return ATS + recruiter improvements.",
-        "target_role": req.target_role or "not provided",
-        "level": req.level,
-        "tone": req.tone,
-        "max_bullets": req.max_bullets,
-        "job_description": req.jd,
-        "resume": req.resume,
-        "missing_keywords_from_matcher": missing_list,
-        "output_format": {
-            "type": "json",
-            "required_keys": [
-                "headline",
-                "overall_feedback",
-                "top_gaps",
-                "keyword_plan",
-                "rewrite_examples",
-                "ats_checks",
-                "next_steps"
-            ],
-            "rewrite_examples_format": {
-                "instruction": "Provide bullet rewrites as BEFORE/AFTER pairs.",
-                "fields": ["before", "after", "why_it_works"]
-            }
-        }
-    }
+JOB DESCRIPTION:
+{req.jd}
 
-    resp = client.responses.create(
-        model="gpt-4o-mini",
-        input=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": json.dumps(user)}
-        ],
-        temperature=0.3,
-    )
+RESUME:
+{req.resume}
 
-    text = (resp.output_text or "").strip()
+MISSING KEYWORDS:
+{", ".join(missing_list)}
 
-    # Parse JSON safely (model should return JSON, but we guard anyway)
+Return STRICT JSON with these keys:
+headline
+overall_feedback
+top_gaps (array)
+keyword_plan (array)
+rewrite_examples (array of objects with before, after, why_it_works)
+ats_checks (array)
+next_steps (array)
+"""
+
     try:
-        # If it returned extra text, attempt to extract JSON block
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a professional resume coach."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+        )
+
+        text = resp.choices[0].message.content.strip()
+
+        # Extract JSON safely
         first = text.find("{")
         last = text.rfind("}")
-        if first != -1 and last != -1 and last > first:
+        if first != -1 and last != -1:
             text = text[first:last+1]
+
         data = json.loads(text)
         return {"ok": True, "data": data}
-    except Exception:
-        return {"ok": True, "data": {"raw": (resp.output_text or "").strip()} }
+
+    except Exception as e:
+        print("OPENAI ERROR:", str(e))
+        return {"error": "OpenAI request failed", "details": str(e)}
