@@ -15,13 +15,20 @@ from openai import OpenAI
 # App + CORS
 # -------------------------
 app = FastAPI(title="Resume Keyword Matcher API", version="1.0.0")
+from fastapi import Response
 
-# For a quick demo we allow all origins.
+@app.options("/{path:path}")
+def preflight_handler(path: str):
+    return Response(status_code=200)# For a quick demo we allow all origins.
 # Later you can restrict to your GitHub Pages domain:
 #   ["https://nyleahmed.github.io"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://nyleahmed.github.io",
+        "http://localhost:5500",
+        "http://127.0.0.1:5500",
+    ],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
