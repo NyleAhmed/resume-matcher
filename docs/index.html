@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Resume Keyword Matcher (Python + PDF Upload)</title>
+  <style>
+    body { font-family: system-ui, Arial; margin: 24px; line-height: 1.4; }
+    h1 { margin-bottom: 6px; }
+    .muted { color: #555; margin-top: 0; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+    textarea { width: 100%; min-height: 240px; padding: 10px; font-size: 14px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+    button { padding: 10px 14px; font-size: 14px; cursor: pointer; }
+    input[type="number"] { width: 70px; padding: 8px; }
+    label { display: flex; gap: 8px; align-items: center; }
+    .cards { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 16px; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
+    .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 12px; margin: 4px 6px 0 0; border: 1px solid #ddd; }
+    .ok { border-color: #b7e4c7; background: #ecfdf3; }
+    .no { border-color: #ffccd5; background: #fff0f3; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .score { font-size: 22px; font-weight: 700; }
+    .small { font-size: 12px; color: #666; }
+    .err { color: #b00020; margin-top: 8px; }
+    .fileBox { margin-top: 10px; padding: 10px; border: 1px dashed #bbb; border-radius: 10px; }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      .cards { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Resume Keyword Matcher</h1>
+  <p class="muted">Paste a job description + resume OR upload a PDF resume. Analysis runs on a Python backend (TF-IDF).</p>
+
+  <div class="grid">
+    <div>
+      <h3>Job Description</h3>
+      <textarea id="jd" placeholder="Paste the job description here..."></textarea>
+    </div>
+    <div>
+      <h3>Resume</h3>
+      <textarea id="resume" placeholder="Paste your resume here... (or upload a PDF below)"></textarea>
+
+      <div class="fileBox">
+        <div class="small" style="margin-bottom:6px;"><b>Or upload PDF resume</b> (recommended)</div>
+        <input id="resumePdf" type="file" accept="application/pdf" />
+        <div class="small" style="margin-top:6px;">
+          If a PDF is uploaded, it will be used instead of the pasted resume text.
+          If your PDF is a scanned image (not selectable text), extraction may fail.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <button id="analyzeBtn">Analyze</button>
+    <button id="clearBtn">Clear</button>
+    <button id="copyMissingBtn">Copy Missing</button>
+
+    <label>
+      Min word length:
+      <input id="minLen" type="number" min="2" max="20" value="3"/>
+    </label>
+
+    <label>
+      Top keywords:
+      <input id="topN" type="number" min="10" max="200" value="40"/>
+    </label>
+
+    <label>
+      <input id="includeBigrams" type="checkbox" checked />
+      Include 2-word phrases
+    </label>
+  </div>
+
+  <div class="err" id="errMsg"></div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="small">Match Score</div>
+      <div class="score" id="score">—</div>
+      <div class="small" id="scoreDetail"></div>
+    </div>
+
+    <div class="card">
+      <div class="small">Found</div>
+      <div class="mono" id="foundCount">—</div>
+    </div>
+
+    <div class="card">
+      <div class="small">Missing</div>
+      <div class="mono" id="missingCount">—</div>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-top:16px;">
+    <div class="card">
+      <h3 style="margin-top:0;">✅ Found Keywords</h3>
+      <div id="foundList"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">❌ Missing Keywords</h3>
+      <div id="missingList"></div>
+    </div>
+  </div>
+
+<script>
+  window.__missingTerms = [];
+
+  // Backend URL
+  const API_BASE = "https://resume-matcher-whj0.onrender.com";
+
+  function makePills(container, items, className) {
+    container.innerHTML = "";
+    if (!items.length) {
+      container.innerHTML = `<div class="small">No items.</div>`;
+      return;
+    }
+    for (const term of items) {
+      const span = document.createElement("span");
+      span.className = `pill ${className}`;
+      span.textContent = term;
+      container.appendChild(span);
+    }
+  }
+
+  async function analyze() {
+    const jdRaw = document.getElementById("jd").value;
+    const resumeRaw = document.getElementById("resume").value;
+    const pdfFile = document.getElementById("resumePdf").files[0];
+
+    const minLen = parseInt(document.getElementById("minLen").value, 10) || 3;
+    const topN = parseInt(document.getElementById("topN").value, 10) || 40;
+    const includeBigrams = document.getElementById("includeBigrams").checked;
+
+    document.getElementById("errMsg").textContent = "";
+
+    if (!jdRaw.trim()) {
+      document.getElementById("errMsg").textContent = "Please paste a job description.";
+      return;
+    }
+
+    if (!pdfFile && !resumeRaw.trim()) {
+      document.getElementById("errMsg").textContent = "Please paste a resume OR upload a PDF resume.";
+      return;
+    }
+
+    try {
+      let res;
+
+      if (pdfFile) {
+        // multipart form data to /analyze_pdf
+        const fd = new FormData();
+        fd.append("jd", jdRaw);
+        fd.append("minLen", String(minLen));
+        fd.append("topN", String(topN));
+        fd.append("includeBigrams", String(includeBigrams));
+        fd.append("resume_pdf", pdfFile);
+
+        res = await fetch(`${API_BASE}/analyze_pdf`, {
+          method: "POST",
+          body: fd
+        });
+      } else {
+        // JSON to /analyze
+        res = await fetch(`${API_BASE}/analyze`, {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({
+            jd: jdRaw,
+            resume: resumeRaw,
+            minLen,
+            topN,
+            includeBigrams
+          })
+        });
+      }
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Backend error (${res.status}): ${text}`);
+      }
+
+      const data = await res.json();
+
+      if (pdfFile && data.total === 0) {
+        document.getElementById("errMsg").textContent =
+          "Your PDF might be a scanned image (no selectable text), so extraction returned nothing. Try a text-based PDF (export from Google Docs/Word) or paste your resume text.";
+      }
+
+      document.getElementById("score").textContent = `${data.scorePct}%`;
+      document.getElementById("scoreDetail").textContent = `${data.found.length} / ${data.total} key terms matched`;
+
+      document.getElementById("foundCount").textContent = data.found.length;
+      document.getElementById("missingCount").textContent = data.missing.length;
+
+      makePills(document.getElementById("foundList"), data.found, "ok");
+      makePills(document.getElementById("missingList"), data.missing, "no");
+
+      window.__missingTerms = data.missing;
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById("errMsg").textContent =
+        "Could not reach the Python backend. Make sure it is running at http://127.0.0.1:8000 (uvicorn main:app --reload).";
+    }
+  }
+
+  document.getElementById("analyzeBtn").addEventListener("click", analyze);
+
+  document.getElementById("clearBtn").addEventListener("click", () => {
+    document.getElementById("jd").value = "";
+    document.getElementById("resume").value = "";
+    document.getElementById("resumePdf").value = "";
+
+    document.getElementById("score").textContent = "—";
+    document.getElementById("scoreDetail").textContent = "";
+    document.getElementById("foundCount").textContent = "—";
+    document.getElementById("missingCount").textContent = "—";
+    document.getElementById("foundList").innerHTML = "";
+    document.getElementById("missingList").innerHTML = "";
+    document.getElementById("errMsg").textContent = "";
+
+    window.__missingTerms = [];
+  });
+
+  document.getElementById("copyMissingBtn").addEventListener("click", async () => {
+    const missing = window.__missingTerms || [];
+    const text = missing.join("\n");
+    if (!text) {
+      alert("No missing terms to copy yet.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      alert("Missing terms copied!");
+    } catch (e) {
+      alert("Clipboard failed. You can manually select and copy from the Missing list.");
+    }
+  });
+</script>
+</body>
+</html>
