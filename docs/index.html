@@ -1116,7 +1116,7 @@
       return;
     }
 
-    showLoading("Drafting your cover letter...", "AI is writing a personable, human-sounding cover letter tailored to this role");
+    showLoading("Drafting your cover letter...", "AI is researching the company and writing a personalized cover letter (this may take a moment)");
 
     try {
       const resp = await fetch(API_BASE + "/cover_letter", {
@@ -1153,8 +1153,10 @@
     const highlightsEl = document.getElementById("highlightsList");
     highlightsEl.innerHTML = highlights.map(h => `<span class="highlight-tag">${esc(h)}</span>`).join("");
 
+    const alignment = data.company_alignment || "";
     const toneNote = data.tone_notes || "";
-    document.getElementById("toneNote").textContent = toneNote;
+    const noteText = alignment ? alignment + (toneNote ? "\n\n" + toneNote : "") : toneNote;
+    document.getElementById("toneNote").textContent = noteText;
   }
 
   function copyCoverLetter() {

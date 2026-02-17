@@ -335,6 +335,49 @@ Make changes_made contain the 8-12 most impactful changes. Keep tips to 3-5 acti
         return {"error": "Resume optimization failed. Please try again.", "details": str(e)}
 
 
+def research_company(company_name: str) -> str:
+    if not company_name or not AI_INTEGRATIONS_OPENAI_API_KEY:
+        return ""
+    try:
+        url = f"https://{company_name.lower().replace(' ', '')}.com"
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "text/html,application/xhtml+xml",
+            }
+            page_resp = http_requests.get(url, headers=headers, timeout=8, allow_redirects=True)
+            if page_resp.ok:
+                soup = BeautifulSoup(page_resp.text, "html.parser")
+                for tag in soup(["script", "style", "nav", "iframe", "noscript"]):
+                    tag.decompose()
+                page_text = soup.get_text(separator="\n", strip=True)[:5000]
+            else:
+                page_text = ""
+        except Exception:
+            page_text = ""
+
+        research_resp = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": "You research companies and summarize their mission, values, and culture. Return only the summary text, no JSON."},
+                {"role": "user", "content": f"""Based on what you know about {company_name} and the following text from their website, provide a brief summary of:
+1. Their mission statement or purpose
+2. Their core values
+3. What they are known for or passionate about
+4. Their culture or what makes them unique
+
+{f'Website text: {page_text}' if page_text else 'No website text available, use your knowledge.'}
+
+Keep it to 3-5 sentences of the most important points."""},
+            ],
+            max_completion_tokens=1024,
+        )
+        return research_resp.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Company research error: {e}")
+        return ""
+
+
 @app.post("/cover_letter")
 def generate_cover_letter(req: CoverLetterRequest) -> Dict[str, Any]:
     if not AI_INTEGRATIONS_OPENAI_API_KEY or not AI_INTEGRATIONS_OPENAI_BASE_URL:
@@ -343,27 +386,47 @@ def generate_cover_letter(req: CoverLetterRequest) -> Dict[str, Any]:
     if len(req.jd) > 50000 or len(req.resume) > 50000:
         return {"error": "Input too large. Please paste less text."}
 
-    company_info = f"The company is: {req.company_name}" if req.company_name else "The company name is not specified, write generically."
+    from datetime import date
+    today = date.today().strftime("%B %d, %Y")
+
+    company_name = req.company_name.strip() if req.company_name else ""
+    greeting = f"Dear {company_name} Hiring Team," if company_name else "Dear Hiring Team,"
+    company_info = f"The company is: {company_name}" if company_name else "The company name is not specified, address as 'Dear Hiring Team,'"
     title_info = f"The job title is: {req.job_title}" if req.job_title else "The job title should be inferred from the job description."
+
+    company_research = research_company(company_name) if company_name else ""
+    research_section = f"""
+COMPANY RESEARCH (use this to personalize the letter, reference their mission, values, or what they stand for):
+{company_research}
+""" if company_research else ""
 
     prompt = f"""You are a talented career coach who writes cover letters that sound genuinely human, warm, confident, and conversational. NOT robotic, NOT generic, NOT overly formal.
 
-Write a cover letter for this candidate applying for the following job. The letter should:
+Write a cover letter for this candidate. The letter MUST follow this exact format:
+
+START WITH:
+{today}
+
+{greeting}
+
+THEN write the body of the letter following these rules:
 
 1. Sound like a real person wrote it, use natural language, contractions, and a friendly but professional tone
-2. Open with something engaging, NOT "I am writing to express my interest in..."
-3. Show genuine enthusiasm for the role and company without being sycophantic
-4. Connect the candidate's SPECIFIC experience to what the job needs, don't just list skills
-5. Tell a brief story or give a concrete example that demonstrates relevant impact
-6. Be concise, aim for 3-4 paragraphs, no more than 350 words
-7. Close with confidence, not desperation
-8. DO NOT fabricate experience, work only with what's in the resume
-9. Avoid cliches like "passionate about", "thrilled to apply", "I believe I would be a great fit"
-10. NEVER use dashes, hyphens, or em dashes (-, --, or the long dash) anywhere in the cover letter. Use commas, periods, or restructure sentences instead
+2. The opening paragraph should be engaging and immediately connect to the company's mission or values. Show you've done your homework on who they are and what they stand for
+3. Show genuine enthusiasm for the role and why THIS specific company appeals to you, referencing their mission, values, or what they're known for
+4. Connect the candidate's SPECIFIC experience to what the job needs across multiple detailed paragraphs, don't just list skills
+5. Include concrete examples and stories that demonstrate relevant impact with numbers or outcomes where possible
+6. Explain how the candidate's values and career goals align with the company's direction
+7. The letter should be substantial, aim for 5-6 full paragraphs and approximately 450 to 550 words in the body (not counting the date and greeting). This should nearly fill a standard page in a Word document
+8. Close with confidence and a forward looking statement
+9. DO NOT fabricate experience, work only with what's in the resume
+10. Avoid cliches like "passionate about", "thrilled to apply", "I believe I would be a great fit"
+11. NEVER use dashes, hyphens, or em dashes (-, --, or the long dash) anywhere in the cover letter. Use commas, periods, or restructure sentences instead
+12. End with a professional sign off like "Sincerely," or "Best regards," followed by a placeholder [Your Name]
 
 {company_info}
 {title_info}
-
+{research_section}
 JOB DESCRIPTION:
 {req.jd}
 
@@ -372,20 +435,21 @@ CANDIDATE'S RESUME:
 
 Return STRICT JSON with this structure:
 {{
-  "cover_letter": "The full cover letter text",
+  "cover_letter": "The full cover letter text starting with the date, then greeting, then body, then sign off",
   "tone_notes": "Brief note on the tone and approach taken",
-  "key_highlights": ["3-4 specific resume points highlighted in the letter"]
+  "key_highlights": ["3-4 specific resume points highlighted in the letter"],
+  "company_alignment": "Brief note on how the letter connects to the company's mission/values"
 }}"""
 
     try:
         resp = client.chat.completions.create(
             model=MODEL,
             messages=[
-                {"role": "system", "content": "You write cover letters that sound authentically human, like a smart, articulate friend helping someone land their dream job. Never sound like a template or AI. NEVER use dashes or hyphens in the cover letter text. Return only valid JSON."},
+                {"role": "system", "content": "You write cover letters that sound authentically human, like a smart, articulate friend helping someone land their dream job. Never sound like a template or AI. NEVER use dashes or hyphens in the cover letter text. The letter should be substantial enough to nearly fill a page in a Word document. Return only valid JSON."},
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
-            max_completion_tokens=4096,
+            max_completion_tokens=8192,
         )
 
         data = json.loads(resp.choices[0].message.content)
