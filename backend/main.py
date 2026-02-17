@@ -2,31 +2,23 @@ import os
 import re
 import json
 from typing import List, Dict, Any, Optional
+from pathlib import Path
 import io
 from fastapi import Form
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from pypdf import PdfReader
 
 from openai import OpenAI
 
-# -------------------------
-# App + CORS
-# -------------------------
 app = FastAPI(title="Resume Keyword Matcher API", version="1.0.0")
-from fastapi import Response
 
-@app.options("/{path:path}")
-def preflight_handler(path: str):
-    return Response(status_code=200)# For a quick demo we allow all origins.
-# Later you can restrict to your GitHub Pages domain:
-#   ["https://nyleahmed.github.io"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://nyleahmed.github.io",
-    ],
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -125,8 +117,15 @@ class SuggestRequest(BaseModel):
 # -------------------------
 # Routes
 # -------------------------
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "docs"
+
 @app.get("/")
 def root():
+    index_file = FRONTEND_DIR / "index.html"
+    return FileResponse(str(index_file), media_type="text/html", headers={"Cache-Control": "no-cache"})
+
+@app.get("/health")
+def health():
     return {"status": "ok", "service": "resume-matcher"}
 
 @app.post("/analyze", response_model=AnalyzeResponse)
@@ -201,7 +200,7 @@ def suggest(req: SuggestRequest) -> Dict[str, Any]:
     if not client:
         return {
             "error": "OPENAI_API_KEY is not set on the server.",
-            "how_to_fix": "Set OPENAI_API_KEY in your Render Environment Variables and redeploy."
+            "how_to_fix": "Set OPENAI_API_KEY in your environment secrets and restart."
         }
 
     if len(req.jd) > 50000 or len(req.resume) > 50000:

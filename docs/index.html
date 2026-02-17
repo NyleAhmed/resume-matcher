@@ -36,9 +36,8 @@
   <h1>Resume Keyword Matcher</h1>
   <p class="muted">Paste a job description and your resume. This finds important terms from the job post and checks which ones appear in your resume.</p>
 
-  <div class="warn">
-    <b>Backend required:</b> This site (GitHub Pages) calls your Render API for analysis + PDF upload + AI suggestions.
-    <div class="small">If buttons do nothing, make sure API_BASE is correct and your Render service is live.</div>
+  <div class="success">
+    <b>Ready!</b> The backend API is running on this same server. Upload a resume and job description to get started.
   </div>
 
   <div class="grid">
@@ -119,9 +118,7 @@
   </div>
 
 <script>
-  // ✅ IMPORTANT: Put your Render backend base URL here (NO trailing slash)
-  // Example: https://resume-matcher-whj0.onrender.com
-  const API_BASE = "https://resume-matcher-whj0.onrender.com";
+  const API_BASE = "";
 
   window.__missingTerms = [];
 
@@ -297,7 +294,7 @@ if (!resume) {
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      setStatus(aiStatus, `<div class="warn">AI request failed. Check your backend logs on Render.</div>`);
+      setStatus(aiStatus, `<div class="warn">AI request failed. Please check the server logs.</div>`);
       return;
     }
 
@@ -365,7 +362,7 @@ if (!resume) {
     try {
       await analyze();
     } catch (e) {
-      alert("Analyze failed. Check API_BASE and Render logs.");
+      alert("Analyze failed. Please check the server logs.");
       console.error(e);
     }
   });
@@ -374,7 +371,7 @@ if (!resume) {
     try {
       await getAiSuggestions();
     } catch (e) {
-      alert("AI suggestions failed. Check Render logs + OPENAI_API_KEY.");
+      alert("AI suggestions failed. Check that OPENAI_API_KEY is set.");
       console.error(e);
     }
   });
