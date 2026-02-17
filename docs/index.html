@@ -594,7 +594,7 @@
 
     .cover-letter-fields {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr;
       gap: 12px;
       margin-bottom: 16px;
     }
@@ -777,6 +777,10 @@
           <div class="card-title">Generate Your Cover Letter</div>
           <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 16px;">Optional: Add the company name and job title for a more personalized letter.</p>
           <div class="cover-letter-fields">
+            <div>
+              <label class="field-label" for="userName">Your Name</label>
+              <input type="text" id="userName" placeholder="Auto-detected from resume, or type here" style="width:100%" />
+            </div>
             <div>
               <label class="field-label" for="companyName">Company Name</label>
               <input type="text" id="companyName" placeholder="e.g., Google, Microsoft..." style="width:100%" />
@@ -1108,6 +1112,7 @@
   async function runCoverLetter() {
     const jd = document.getElementById("jd").value.trim();
     const resume = document.getElementById("resume").value.trim();
+    const userName = document.getElementById("userName").value.trim();
     const companyName = document.getElementById("companyName").value.trim();
     const jobTitle = document.getElementById("jobTitle").value.trim();
 
@@ -1122,7 +1127,7 @@
       const resp = await fetch(API_BASE + "/cover_letter", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jd, resume, company_name: companyName, job_title: jobTitle })
+        body: JSON.stringify({ jd, resume, company_name: companyName, job_title: jobTitle, user_name: userName })
       });
 
       const result = await resp.json();
@@ -1188,6 +1193,7 @@
     document.getElementById("jdUrl").value = "";
     document.getElementById("resume").value = "";
     document.getElementById("resumePdf").value = "";
+    document.getElementById("userName").value = "";
     document.getElementById("companyName").value = "";
     document.getElementById("jobTitle").value = "";
     hideError();

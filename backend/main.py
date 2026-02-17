@@ -82,6 +82,7 @@ class CoverLetterRequest(BaseModel):
     resume: str
     company_name: str = ""
     job_title: str = ""
+    user_name: str = ""
 
 class RewriteRequest(BaseModel):
     jd: str
@@ -394,6 +395,18 @@ def generate_cover_letter(req: CoverLetterRequest) -> Dict[str, Any]:
     company_info = f"The company is: {company_name}" if company_name else "The company name is not specified, address as 'Dear Hiring Team,'"
     title_info = f"The job title is: {req.job_title}" if req.job_title else "The job title should be inferred from the job description."
 
+    user_name = req.user_name.strip() if req.user_name else ""
+    if not user_name:
+        resume_lines = req.resume.strip().splitlines()
+        for line in resume_lines[:5]:
+            cleaned_line = line.strip()
+            if cleaned_line and len(cleaned_line) < 60 and not any(kw in cleaned_line.lower() for kw in ["resume", "objective", "summary", "experience", "education", "phone", "email", "@", "http", "linkedin", "address"]):
+                words = cleaned_line.split()
+                if 2 <= len(words) <= 4 and all(w[0].isupper() for w in words if w):
+                    user_name = cleaned_line
+                    break
+    sign_off_name = user_name if user_name else "[Your Name]"
+
     company_research = research_company(company_name) if company_name else ""
     research_section = f"""
 COMPANY RESEARCH (use this to personalize the letter, reference their mission, values, or what they stand for):
@@ -422,7 +435,7 @@ THEN write the body of the letter following these rules:
 9. DO NOT fabricate experience, work only with what's in the resume
 10. Avoid cliches like "passionate about", "thrilled to apply", "I believe I would be a great fit"
 11. NEVER use dashes, hyphens, or em dashes (-, --, or the long dash) anywhere in the cover letter. Use commas, periods, or restructure sentences instead
-12. End with a professional sign off like "Sincerely," or "Best regards," followed by a placeholder [Your Name]
+12. End with a professional sign off like "Sincerely," or "Best regards," followed by the name: {sign_off_name}
 
 {company_info}
 {title_info}
