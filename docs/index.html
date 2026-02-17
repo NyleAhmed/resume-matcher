@@ -496,6 +496,128 @@
     .stat strong {
       color: var(--text);
     }
+
+    .url-input-group {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .url-input-group input[type="text"] {
+      flex: 1;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-family: inherit;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      transition: border-color 0.2s;
+    }
+
+    .url-input-group input[type="text"]:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .url-input-group .btn {
+      white-space: nowrap;
+      padding: 10px 16px;
+      font-size: 13px;
+    }
+
+    .input-divider {
+      text-align: center;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 12px 0;
+      position: relative;
+    }
+
+    .input-divider::before,
+    .input-divider::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      width: 40%;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .input-divider::before { left: 0; }
+    .input-divider::after { right: 0; }
+
+    .cover-letter-output {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      font-size: 15px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      font-family: 'Georgia', serif;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    .highlight-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .highlight-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      background: var(--primary-light);
+      color: var(--primary);
+      border: 1px solid #bfdbfe;
+    }
+
+    .tone-note {
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: #92400e;
+      margin-top: 12px;
+    }
+
+    .cover-letter-fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 800px) {
+      .cover-letter-fields { grid-template-columns: 1fr; }
+    }
+
+    .cover-letter-fields input[type="text"] {
+      padding: 10px 14px;
+      font-size: 14px;
+      font-family: inherit;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      transition: border-color 0.2s;
+    }
+
+    .cover-letter-fields input[type="text"]:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
   </style>
 </head>
 <body>
@@ -521,6 +643,7 @@
       <div class="step-indicator active" data-step="1" onclick="goToStep(1)">1. Input</div>
       <div class="step-indicator" data-step="2" onclick="goToStep(2)">2. Skill Gap</div>
       <div class="step-indicator" data-step="3" onclick="goToStep(3)">3. Optimize</div>
+      <div class="step-indicator" data-step="4" onclick="goToStep(4)">4. Cover Letter</div>
     </div>
   </div>
 
@@ -532,6 +655,12 @@
         <div class="grid-2">
           <div class="card">
             <div class="card-title">Job Description</div>
+            <label class="field-label">Paste a job posting URL</label>
+            <div class="url-input-group">
+              <input type="text" id="jdUrl" placeholder="https://www.linkedin.com/jobs/view/..." />
+              <button class="btn btn-secondary" onclick="fetchJobUrl()">Fetch</button>
+            </div>
+            <div class="input-divider">or paste text</div>
             <label class="field-label" for="jd">Paste the full job posting</label>
             <textarea id="jd" placeholder="Paste the complete job description here including requirements, qualifications, and responsibilities..."></textarea>
           </div>
@@ -637,6 +766,48 @@
 
         <div class="btn-row">
           <button class="btn btn-secondary" onclick="goToStep(2)">Back to Analysis</button>
+          <button class="btn btn-primary" onclick="goToStep(4)">Generate Cover Letter</button>
+          <button class="btn btn-secondary" onclick="goToStep(1)">Start Over</button>
+        </div>
+      </div>
+
+      <!-- STEP 4: Cover Letter -->
+      <div class="step-panel" id="step4">
+        <div class="card">
+          <div class="card-title">Generate Your Cover Letter</div>
+          <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 16px;">Optional: Add the company name and job title for a more personalized letter.</p>
+          <div class="cover-letter-fields">
+            <div>
+              <label class="field-label" for="companyName">Company Name</label>
+              <input type="text" id="companyName" placeholder="e.g., Google, Microsoft..." style="width:100%" />
+            </div>
+            <div>
+              <label class="field-label" for="jobTitle">Job Title</label>
+              <input type="text" id="jobTitle" placeholder="e.g., Senior Software Engineer..." style="width:100%" />
+            </div>
+          </div>
+          <div class="btn-row" style="margin-top:0">
+            <button class="btn btn-primary" id="coverLetterBtn" onclick="runCoverLetter()">Draft My Cover Letter</button>
+          </div>
+        </div>
+
+        <div class="card" id="coverLetterCard" style="display:none">
+          <div class="card-title">Your Cover Letter</div>
+          <div class="cover-letter-output" id="coverLetterOutput"></div>
+          <div class="btn-row">
+            <button class="btn btn-success" onclick="copyCoverLetter()">Copy Cover Letter</button>
+            <button class="btn btn-secondary" onclick="downloadCoverLetter()">Download as Text</button>
+          </div>
+        </div>
+
+        <div class="card" id="coverLetterHighlightsCard" style="display:none">
+          <div class="card-title">Key Experience Highlighted</div>
+          <div class="highlight-list" id="highlightsList"></div>
+          <div class="tone-note" id="toneNote"></div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="goToStep(3)">Back to Optimized Resume</button>
           <button class="btn btn-secondary" onclick="goToStep(1)">Start Over</button>
         </div>
       </div>
@@ -899,12 +1070,128 @@
     URL.revokeObjectURL(url);
   }
 
+  async function fetchJobUrl() {
+    hideError();
+    const url = document.getElementById("jdUrl").value.trim();
+    if (!url) { showError("Please enter a job posting URL."); return; }
+
+    showLoading("Fetching job posting...", "Reading the job description from the URL");
+
+    try {
+      const resp = await fetch(API_BASE + "/scrape_url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url })
+      });
+
+      const data = await resp.json();
+      hideLoading();
+
+      if (!resp.ok) {
+        showError(data.detail || "Could not fetch that URL.");
+        return;
+      }
+
+      if (data.error) {
+        showError(data.error);
+        return;
+      }
+
+      document.getElementById("jd").value = data.text;
+    } catch (e) {
+      hideLoading();
+      showError("Failed to fetch the job posting. Try copying the text manually.");
+      console.error(e);
+    }
+  }
+
+  async function runCoverLetter() {
+    const jd = document.getElementById("jd").value.trim();
+    const resume = document.getElementById("resume").value.trim();
+    const companyName = document.getElementById("companyName").value.trim();
+    const jobTitle = document.getElementById("jobTitle").value.trim();
+
+    if (!jd || !resume) {
+      alert("Please go back to Step 1 and enter a job description and resume first.");
+      return;
+    }
+
+    showLoading("Drafting your cover letter...", "AI is writing a personable, human-sounding cover letter tailored to this role");
+
+    try {
+      const resp = await fetch(API_BASE + "/cover_letter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jd, resume, company_name: companyName, job_title: jobTitle })
+      });
+
+      const result = await resp.json();
+
+      if (result.error) {
+        hideLoading();
+        alert(result.error);
+        return;
+      }
+
+      const data = result.data || {};
+      renderCoverLetter(data);
+      hideLoading();
+    } catch (e) {
+      hideLoading();
+      alert("Cover letter generation failed. Please try again.");
+      console.error(e);
+    }
+  }
+
+  function renderCoverLetter(data) {
+    document.getElementById("coverLetterCard").style.display = "block";
+    document.getElementById("coverLetterHighlightsCard").style.display = "block";
+
+    document.getElementById("coverLetterOutput").textContent = data.cover_letter || "No cover letter generated.";
+
+    const highlights = data.key_highlights || [];
+    const highlightsEl = document.getElementById("highlightsList");
+    highlightsEl.innerHTML = highlights.map(h => `<span class="highlight-tag">${esc(h)}</span>`).join("");
+
+    const toneNote = data.tone_notes || "";
+    document.getElementById("toneNote").textContent = toneNote;
+  }
+
+  function copyCoverLetter() {
+    const text = document.getElementById("coverLetterOutput").textContent;
+    if (!text || text === "No cover letter generated.") {
+      alert("No cover letter to copy yet.");
+      return;
+    }
+    navigator.clipboard.writeText(text).then(() => alert("Cover letter copied!")).catch(() => alert("Could not copy. Please select and copy manually."));
+  }
+
+  function downloadCoverLetter() {
+    const text = document.getElementById("coverLetterOutput").textContent;
+    if (!text || text === "No cover letter generated.") {
+      alert("No cover letter to download yet.");
+      return;
+    }
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "cover_letter.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function clearAll() {
     document.getElementById("jd").value = "";
+    document.getElementById("jdUrl").value = "";
     document.getElementById("resume").value = "";
     document.getElementById("resumePdf").value = "";
+    document.getElementById("companyName").value = "";
+    document.getElementById("jobTitle").value = "";
     hideError();
     analysisData = null;
+    document.getElementById("coverLetterCard").style.display = "none";
+    document.getElementById("coverLetterHighlightsCard").style.display = "none";
     goToStep(1);
   }
 

@@ -4,6 +4,8 @@ import json
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import io
+import requests as http_requests
+from bs4 import BeautifulSoup
 from fastapi import Form, FastAPI, UploadFile, File, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -72,6 +74,15 @@ class AnalyzeResponse(BaseModel):
     missing: List[str]
     all_skills: List[str]
 
+class ScrapeUrlRequest(BaseModel):
+    url: str
+
+class CoverLetterRequest(BaseModel):
+    jd: str
+    resume: str
+    company_name: str = ""
+    job_title: str = ""
+
 class RewriteRequest(BaseModel):
     jd: str
     resume: str
@@ -103,6 +114,58 @@ async def extract_pdf(resume_pdf: UploadFile = File(...)):
     if not text.strip():
         return {"error": "Could not extract text from this PDF. It may be a scanned image. Try a text-based PDF."}
     return {"text": text}
+
+
+@app.post("/scrape_url")
+def scrape_url(req: ScrapeUrlRequest) -> Dict[str, Any]:
+    url = req.url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Please provide a URL.")
+    if not url.startswith("http"):
+        url = "https://" + url
+
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Only http and https URLs are supported.")
+    hostname = parsed.hostname or ""
+    blocked = ["localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254", "[::1]", "metadata.google.internal"]
+    if hostname in blocked or hostname.startswith("10.") or hostname.startswith("192.168.") or hostname.startswith("172."):
+        raise HTTPException(status_code=400, detail="This URL is not allowed.")
+
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        }
+        resp = http_requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        resp.raise_for_status()
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        for tag in soup(["script", "style", "nav", "footer", "header", "iframe", "noscript"]):
+            tag.decompose()
+
+        text = soup.get_text(separator="\n", strip=True)
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        cleaned = "\n".join(lines)
+
+        if len(cleaned) < 50:
+            return {"error": "Could not extract enough text from this URL. The page might require login or use dynamic content. Try copying the job description manually."}
+
+        if len(cleaned) > 15000:
+            cleaned = cleaned[:15000]
+
+        return {"text": cleaned}
+
+    except http_requests.exceptions.Timeout:
+        return {"error": "The page took too long to load. Please try copying the job description manually."}
+    except http_requests.exceptions.RequestException as e:
+        return {"error": f"Could not access that URL. Please try copying the job description manually."}
+    except Exception as e:
+        print(f"SCRAPE ERROR: {e}")
+        return {"error": "Something went wrong reading that page. Please try copying the job description manually."}
 
 
 @app.post("/analyze")
@@ -231,3 +294,63 @@ Make changes_made contain the 8-12 most impactful changes. Keep tips to 3-5 acti
     except Exception as e:
         print(f"REWRITE ERROR: {e}")
         return {"error": "Resume optimization failed. Please try again.", "details": str(e)}
+
+
+@app.post("/cover_letter")
+def generate_cover_letter(req: CoverLetterRequest) -> Dict[str, Any]:
+    if not AI_INTEGRATIONS_OPENAI_API_KEY or not AI_INTEGRATIONS_OPENAI_BASE_URL:
+        return {"error": "AI service is not configured. Please set up OpenAI integration."}
+
+    if len(req.jd) > 50000 or len(req.resume) > 50000:
+        return {"error": "Input too large. Please paste less text."}
+
+    company_info = f"The company is: {req.company_name}" if req.company_name else "The company name is not specified — write generically."
+    title_info = f"The job title is: {req.job_title}" if req.job_title else "The job title should be inferred from the job description."
+
+    prompt = f"""You are a talented career coach who writes cover letters that sound genuinely human — warm, confident, and conversational. NOT robotic, NOT generic, NOT overly formal.
+
+Write a cover letter for this candidate applying for the following job. The letter should:
+
+1. Sound like a real person wrote it — use natural language, contractions, and a friendly-but-professional tone
+2. Open with something engaging, NOT "I am writing to express my interest in..."
+3. Show genuine enthusiasm for the role and company without being sycophantic
+4. Connect the candidate's SPECIFIC experience to what the job needs — don't just list skills
+5. Tell a brief story or give a concrete example that demonstrates relevant impact
+6. Be concise — aim for 3-4 paragraphs, no more than 350 words
+7. Close with confidence, not desperation
+8. DO NOT fabricate experience — work only with what's in the resume
+9. Avoid cliches like "passionate about", "thrilled to apply", "I believe I would be a great fit"
+
+{company_info}
+{title_info}
+
+JOB DESCRIPTION:
+{req.jd}
+
+CANDIDATE'S RESUME:
+{req.resume}
+
+Return STRICT JSON with this structure:
+{{
+  "cover_letter": "The full cover letter text",
+  "tone_notes": "Brief note on the tone and approach taken",
+  "key_highlights": ["3-4 specific resume points highlighted in the letter"]
+}}"""
+
+    try:
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": "You write cover letters that sound authentically human — like a smart, articulate friend helping someone land their dream job. Never sound like a template or AI. Return only valid JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+            max_completion_tokens=4096,
+        )
+
+        data = json.loads(resp.choices[0].message.content)
+        return {"ok": True, "data": data}
+
+    except Exception as e:
+        print(f"COVER LETTER ERROR: {e}")
+        return {"error": "Cover letter generation failed. Please try again.", "details": str(e)}

@@ -10,12 +10,16 @@ An AI-powered Resume ATS Optimizer that analyzes job descriptions against resume
     - `GET /` - Serves frontend
     - `GET /health` - Health check
     - `POST /extract_pdf` - Extracts text from uploaded PDF resumes
+    - `POST /scrape_url` - Scrapes job description text from a URL
     - `POST /analyze` - AI-powered skill gap analysis (identifies real skills, not filler words)
     - `POST /rewrite` - AI-powered line-by-line resume optimization
+    - `POST /cover_letter` - AI-generated personalized, human-sounding cover letter
   - Uses pypdf for PDF text extraction
+  - Uses requests + BeautifulSoup for URL scraping
   - Uses OpenAI (gpt-5-mini) via Replit AI Integrations for all AI features
 - **Frontend**: Single-page HTML app (`docs/index.html`)
-  - Modern, clean UI with 3-step flow: Input -> Skill Gap Analysis -> AI Resume Optimization
+  - Modern, clean UI with 4-step flow: Input -> Skill Gap Analysis -> AI Resume Optimization -> Cover Letter
+  - URL paste option for job postings (auto-fetch job description from link)
   - Vanilla HTML/CSS/JS, no build step
   - Communicates with backend API using relative URLs (same-origin)
 
@@ -34,6 +38,11 @@ An AI-powered Resume ATS Optimizer that analyzes job descriptions against resume
 - `AI_INTEGRATIONS_OPENAI_BASE_URL` - Auto-set by Replit AI Integrations
 
 ## Recent Changes
+- 2026-02-17: v2.1 - URL scraping and cover letter features
+  - Added job posting URL scraping (paste a link instead of copying text)
+  - Added AI cover letter generator (human-sounding, personable, unique)
+  - Updated frontend to 4-step flow with URL input option
+  - Added requests + BeautifulSoup dependencies
 - 2026-02-17: Major upgrade to v2.0
   - Replaced rule-based keyword extraction with AI-powered skill identification (no more filler words)
   - Added line-by-line AI resume optimization with ATS scoring
