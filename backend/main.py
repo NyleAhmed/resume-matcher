@@ -157,6 +157,45 @@ def scrape_url(req: ScrapeUrlRequest) -> Dict[str, Any]:
         if len(cleaned) > 15000:
             cleaned = cleaned[:15000]
 
+        if AI_INTEGRATIONS_OPENAI_API_KEY and AI_INTEGRATIONS_OPENAI_BASE_URL:
+            try:
+                extract_resp = client.chat.completions.create(
+                    model=MODEL,
+                    messages=[
+                        {"role": "system", "content": "You extract only the important parts of a job posting. Return ONLY the relevant content, nothing else. No JSON wrapping, just the cleaned text."},
+                        {"role": "user", "content": f"""Extract ONLY the important job posting content from this scraped web page text. Keep ONLY:
+- Job title
+- Company name
+- Job description / overview
+- Responsibilities / duties
+- Requirements / qualifications (required and preferred)
+- Skills needed
+- Education requirements
+- Experience requirements
+- Salary/compensation (if listed)
+- Location / remote info (if listed)
+
+Remove ALL:
+- Navigation menus, breadcrumbs
+- Cookie notices, privacy policies
+- Social media links, share buttons
+- Login prompts, sign up forms
+- Ads, related jobs, recommended jobs
+- Company boilerplate / legal text
+- Duplicate content
+- Website UI text (buttons, links, headers unrelated to the job)
+
+Raw page text:
+{cleaned}"""},
+                    ],
+                    max_completion_tokens=4096,
+                )
+                extracted = extract_resp.choices[0].message.content.strip()
+                if len(extracted) > 100:
+                    cleaned = extracted
+            except Exception as e:
+                print(f"AI extraction fallback: {e}")
+
         return {"text": cleaned}
 
     except http_requests.exceptions.Timeout:
@@ -304,22 +343,23 @@ def generate_cover_letter(req: CoverLetterRequest) -> Dict[str, Any]:
     if len(req.jd) > 50000 or len(req.resume) > 50000:
         return {"error": "Input too large. Please paste less text."}
 
-    company_info = f"The company is: {req.company_name}" if req.company_name else "The company name is not specified — write generically."
+    company_info = f"The company is: {req.company_name}" if req.company_name else "The company name is not specified, write generically."
     title_info = f"The job title is: {req.job_title}" if req.job_title else "The job title should be inferred from the job description."
 
-    prompt = f"""You are a talented career coach who writes cover letters that sound genuinely human — warm, confident, and conversational. NOT robotic, NOT generic, NOT overly formal.
+    prompt = f"""You are a talented career coach who writes cover letters that sound genuinely human, warm, confident, and conversational. NOT robotic, NOT generic, NOT overly formal.
 
 Write a cover letter for this candidate applying for the following job. The letter should:
 
-1. Sound like a real person wrote it — use natural language, contractions, and a friendly-but-professional tone
+1. Sound like a real person wrote it, use natural language, contractions, and a friendly but professional tone
 2. Open with something engaging, NOT "I am writing to express my interest in..."
 3. Show genuine enthusiasm for the role and company without being sycophantic
-4. Connect the candidate's SPECIFIC experience to what the job needs — don't just list skills
+4. Connect the candidate's SPECIFIC experience to what the job needs, don't just list skills
 5. Tell a brief story or give a concrete example that demonstrates relevant impact
-6. Be concise — aim for 3-4 paragraphs, no more than 350 words
+6. Be concise, aim for 3-4 paragraphs, no more than 350 words
 7. Close with confidence, not desperation
-8. DO NOT fabricate experience — work only with what's in the resume
+8. DO NOT fabricate experience, work only with what's in the resume
 9. Avoid cliches like "passionate about", "thrilled to apply", "I believe I would be a great fit"
+10. NEVER use dashes, hyphens, or em dashes (-, --, or the long dash) anywhere in the cover letter. Use commas, periods, or restructure sentences instead
 
 {company_info}
 {title_info}
@@ -341,7 +381,7 @@ Return STRICT JSON with this structure:
         resp = client.chat.completions.create(
             model=MODEL,
             messages=[
-                {"role": "system", "content": "You write cover letters that sound authentically human — like a smart, articulate friend helping someone land their dream job. Never sound like a template or AI. Return only valid JSON."},
+                {"role": "system", "content": "You write cover letters that sound authentically human, like a smart, articulate friend helping someone land their dream job. Never sound like a template or AI. NEVER use dashes or hyphens in the cover letter text. Return only valid JSON."},
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
