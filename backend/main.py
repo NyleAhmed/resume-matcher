@@ -4,17 +4,14 @@ import json
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import io
-from fastapi import Form
-from fastapi import FastAPI, UploadFile, File, Response
+from fastapi import Form, FastAPI, UploadFile, File, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from pypdf import PdfReader
-
 from openai import OpenAI
 
-app = FastAPI(title="Resume Keyword Matcher API", version="1.0.0")
+app = FastAPI(title="Resume Keyword Matcher API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,193 +20,104 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# -------------------------
-# OpenAI Client
-# -------------------------
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+# the newest OpenAI model is "gpt-5" which was released August 7, 2025.
+# do not change this unless explicitly requested by the user
+# Using Replit AI Integrations for OpenAI access
+AI_INTEGRATIONS_OPENAI_API_KEY = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY")
+AI_INTEGRATIONS_OPENAI_BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
+
+client = OpenAI(
+    api_key=AI_INTEGRATIONS_OPENAI_API_KEY,
+    base_url=AI_INTEGRATIONS_OPENAI_BASE_URL,
+)
+
+MODEL = "gpt-5-mini"
+
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "docs"
 
 
-# -------------------------
-# Helpers (keyword extraction)
-# -------------------------
-STOPWORDS = set([
-    "a","an","the","and","or","but","if","then","else","when","while","to","of","in","on","for","from",
-    "with","without","at","by","as","is","are","was","were","be","been","being","it","its","this","that",
-    "these","those","you","your","we","our","they","their","i","me","my","us","them",
-    "will","can","may","might","should","must","do","does","did","doing","done",
-    "not","no","yes","so","than","too","very","more","most","less","least",
-    "role","job","work","team","teams","responsibilities","responsibility","experience","required","requirements",
-    "preferred","skills","skill","ability","abilities","including","include","plus"
-])
-
-def normalize_text(s: str) -> str:
-    s = (s or "").lower()
-    s = s.replace("\u2019", "'")
-    s = re.sub(r"[^a-z0-9\s'+-]", " ", s)   # keep letters, digits, space, +, -, '
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
-
-def tokenize_words(text: str) -> List[str]:
-    return [w for w in normalize_text(text).split(" ") if w]
-
-def build_word_freq(words: List[str], min_len: int) -> Dict[str, int]:
-    freq: Dict[str, int] = {}
-    for w in words:
-        if len(w) < min_len:
-            continue
-        if w in STOPWORDS:
-            continue
-        token = re.sub(r"^'+|'+$", "", w)
-        if not token or len(token) < min_len:
-            continue
-        freq[token] = freq.get(token, 0) + 1
-    return freq
-
-def build_bigram_freq(words: List[str], min_len: int) -> Dict[str, int]:
-    freq: Dict[str, int] = {}
-    for i in range(len(words) - 1):
-        a, b = words[i], words[i + 1]
-        if len(a) < min_len or len(b) < min_len:
-            continue
-        if a in STOPWORDS or b in STOPWORDS:
-            continue
-        phrase = f"{a} {b}"
-        freq[phrase] = freq.get(phrase, 0) + 1
-    return freq
-
-def top_keywords(freq: Dict[str, int], top_n: int) -> List[str]:
-    items = sorted(freq.items(), key=lambda kv: kv[1], reverse=True)
-    return [k for k, _ in items[:top_n]]
-
-def term_in_text(term: str, resume_text_normalized: str) -> bool:
-    if " " in term:
-        return term in resume_text_normalized
-    return f" {resume_text_normalized} ".find(f" {term} ") != -1
+def extract_pdf_text(data: bytes) -> str:
+    reader = PdfReader(io.BytesIO(data))
+    pages = []
+    for p in reader.pages:
+        pages.append(p.extract_text() or "")
+    return "\n".join(pages).strip()
 
 
-# -------------------------
-# Schemas
-# -------------------------
+def parse_json_from_text(text: str) -> Any:
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    first = text.find("[") if text.find("[") != -1 and (text.find("{") == -1 or text.find("[") < text.find("{")) else text.find("{")
+    last_bracket = text.rfind("]")
+    last_brace = text.rfind("}")
+    last = max(last_bracket, last_brace)
+    if first != -1 and last != -1:
+        text = text[first:last + 1]
+    return json.loads(text)
+
+
 class AnalyzeRequest(BaseModel):
     jd: str
     resume: str
-    minLen: int = 3
-    topN: int = 40
-    includeBigrams: bool = True
 
 class AnalyzeResponse(BaseModel):
-    scorePct: int
+    score_pct: int
     found: List[str]
     missing: List[str]
-    keywords: List[str]
-class AnalyzePdfResponse(AnalyzeResponse):
-    resume_text: str
-class SuggestRequest(BaseModel):
-    jd: str = Field(..., description="Job description text")
-    resume: str = Field(..., description="Resume text")
-    missing: List[str] = Field(default_factory=list, description="Missing keywords (optional, from matcher)")
-    target_role: Optional[str] = Field(default=None, description="Optional role name to tailor suggestions")
-    level: str = Field(default="intern", description="intern / entry / mid / senior")
-    tone: str = Field(default="confident", description="confident / formal / concise")
-    max_bullets: int = Field(default=6, ge=3, le=12)
+    all_skills: List[str]
 
-# -------------------------
-# Routes
-# -------------------------
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "docs"
+class RewriteRequest(BaseModel):
+    jd: str
+    resume: str
+    missing_skills: List[str] = Field(default_factory=list)
+
+class RewriteResponse(BaseModel):
+    optimized_resume: str
+    changes_made: List[Dict[str, str]]
+    ats_score_before: int
+    ats_score_after: int
+    tips: List[str]
+
 
 @app.get("/")
 def root():
     index_file = FRONTEND_DIR / "index.html"
     return FileResponse(str(index_file), media_type="text/html", headers={"Cache-Control": "no-cache"})
 
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "resume-matcher"}
+    return {"status": "ok", "service": "resume-matcher", "version": "2.0"}
 
-@app.post("/analyze", response_model=AnalyzeResponse)
-def analyze(req: AnalyzeRequest):
-    jd_words = tokenize_words(req.jd)
-    resume_norm = normalize_text(req.resume)
 
-    word_freq = build_word_freq(jd_words, req.minLen)
-    if req.includeBigrams:
-        bigram_freq = build_bigram_freq(jd_words, req.minLen)
-        # merge
-        for k, v in bigram_freq.items():
-            word_freq[k] = word_freq.get(k, 0) + v
-
-    keywords = top_keywords(word_freq, req.topN)
-
-    found, missing = [], []
-    for term in keywords:
-        if term_in_text(term, resume_norm):
-            found.append(term)
-        else:
-            missing.append(term)
-
-    total = max(1, len(keywords))
-    score_pct = round((len(found) / total) * 100)
-
-    return AnalyzeResponse(
-        scorePct=score_pct,
-        found=found,
-        missing=missing,
-        keywords=keywords
-    )
-
-@app.post("/analyze_pdf", response_model=AnalyzePdfResponse)
-async def analyze_pdf(
-    jd: str = Form(...),
-    minLen: int = Form(3),
-    topN: int = Form(40),
-    includeBigrams: bool = Form(True),
-    resume_pdf: UploadFile = File(...)
-):
-    # Extract text from PDF
+@app.post("/extract_pdf")
+async def extract_pdf(resume_pdf: UploadFile = File(...)):
     data = await resume_pdf.read()
-    reader = PdfReader(io.BytesIO(data))
+    text = extract_pdf_text(data)
+    if not text.strip():
+        return {"error": "Could not extract text from this PDF. It may be a scanned image. Try a text-based PDF."}
+    return {"text": text}
 
-    pages_text = []
-    for p in reader.pages:
-        pages_text.append(p.extract_text() or "")
-    resume_text = "\n".join(pages_text).strip()
 
-    req = AnalyzeRequest(
-        jd=jd,
-        resume=resume_text,
-        minLen=minLen,
-        topN=topN,
-        includeBigrams=includeBigrams
-    )
-
-    result = analyze(req)  # returns AnalyzeResponse
-
-    # Return result + extracted resume text
-    return AnalyzePdfResponse(
-        scorePct=result.scorePct,
-        found=result.found,
-        missing=result.missing,
-        keywords=result.keywords,
-        resume_text=resume_text
-    )
-
-@app.post("/suggest")
-def suggest(req: SuggestRequest) -> Dict[str, Any]:
-    if not client:
-        return {
-            "error": "OPENAI_API_KEY is not set on the server.",
-            "how_to_fix": "Set OPENAI_API_KEY in your environment secrets and restart."
-        }
+@app.post("/analyze")
+def analyze(req: AnalyzeRequest):
+    if not AI_INTEGRATIONS_OPENAI_API_KEY or not AI_INTEGRATIONS_OPENAI_BASE_URL:
+        raise HTTPException(status_code=503, detail="AI service is not configured. Please set up OpenAI integration.")
 
     if len(req.jd) > 50000 or len(req.resume) > 50000:
-        return {"error": "Input too large. Please paste less text."}
+        raise HTTPException(status_code=400, detail="Input too large. Please paste less text.")
 
-    missing_list = req.missing[:80]
+    prompt = f"""Analyze this job description and resume. Extract ONLY real, specific skills, technologies, tools, certifications, methodologies, and technical competencies from the job description. 
 
-    prompt = f"""
-You are an expert ATS-friendly resume coach and recruiter.
+DO NOT include generic words like: experience, team, communication, responsibilities, requirements, ability, knowledge, understanding, working, management (unless it's a specific methodology like "project management" or "change management"), about, strong, excellent, preferred, required, etc.
+
+ONLY include items like: Python, JavaScript, AWS, Agile, Scrum, SQL, Docker, Kubernetes, React, machine learning, data analysis, CI/CD, REST APIs, project management, Six Sigma, Tableau, Excel, etc.
 
 JOB DESCRIPTION:
 {req.jd}
@@ -217,40 +125,109 @@ JOB DESCRIPTION:
 RESUME:
 {req.resume}
 
-MISSING KEYWORDS:
-{", ".join(missing_list)}
+Return STRICT JSON (no markdown, no explanation) with this exact structure:
+{{
+  "all_skills": ["skill1", "skill2", ...],
+  "found": ["skill1", "skill2", ...],
+  "missing": ["skill1", "skill2", ...],
+  "score_pct": 75
+}}
 
-Return STRICT JSON with these keys:
-headline
-overall_feedback
-top_gaps (array)
-keyword_plan (array)
-rewrite_examples (array of objects with before, after, why_it_works)
-ats_checks (array)
-next_steps (array)
-"""
+Where:
+- all_skills: every real skill/technology/tool/certification found in the job description (max 40)
+- found: skills from the JD that ARE present in the resume
+- missing: skills from the JD that are NOT in the resume
+- score_pct: percentage of JD skills found in resume (0-100)"""
 
     try:
+        # the newest OpenAI model is "gpt-5" which was released August 7, 2025.
+        # do not change this unless explicitly requested by the user
         resp = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=MODEL,
             messages=[
-                {"role": "system", "content": "You are a professional resume coach."},
+                {"role": "system", "content": "You are an expert ATS (Applicant Tracking System) analyzer. You identify only real, actionable skills, technologies, tools, and certifications. Never include generic filler words. Return only valid JSON."},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.3,
+            response_format={"type": "json_object"},
+            max_completion_tokens=8192,
         )
 
-        text = resp.choices[0].message.content.strip()
+        data = json.loads(resp.choices[0].message.content)
+        return AnalyzeResponse(
+            score_pct=data.get("score_pct", 0),
+            found=data.get("found", []),
+            missing=data.get("missing", []),
+            all_skills=data.get("all_skills", []),
+        )
 
-        # Extract JSON safely
-        first = text.find("{")
-        last = text.rfind("}")
-        if first != -1 and last != -1:
-            text = text[first:last+1]
+    except Exception as e:
+        print(f"ANALYZE ERROR: {e}")
+        raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
 
-        data = json.loads(text)
+
+@app.post("/rewrite")
+def rewrite_resume(req: RewriteRequest) -> Dict[str, Any]:
+    if not AI_INTEGRATIONS_OPENAI_API_KEY or not AI_INTEGRATIONS_OPENAI_BASE_URL:
+        return {"error": "AI service is not configured. Please set up OpenAI integration."}
+
+    if len(req.jd) > 50000 or len(req.resume) > 50000:
+        return {"error": "Input too large. Please paste less text."}
+
+    missing_str = ", ".join(req.missing_skills[:50]) if req.missing_skills else "none identified"
+
+    prompt = f"""You are an expert ATS resume optimizer. Your job is to rewrite a candidate's resume to maximize their ATS (Applicant Tracking System) match score for a specific job.
+
+JOB DESCRIPTION:
+{req.jd}
+
+ORIGINAL RESUME:
+{req.resume}
+
+MISSING SKILLS/KEYWORDS:
+{missing_str}
+
+Instructions:
+1. Go through the resume LINE BY LINE
+2. Rewrite bullet points to naturally incorporate missing keywords where truthful
+3. Strengthen action verbs and quantify achievements where possible
+4. Reorganize sections to prioritize the most relevant experience
+5. Add a tailored professional summary if one doesn't exist
+6. DO NOT fabricate experience or skills the candidate doesn't have — instead, reframe existing experience to better highlight relevant transferable skills
+7. Keep the same general structure (sections, job titles, dates) but improve the content
+
+Return STRICT JSON with this structure:
+{{
+  "optimized_resume": "The full rewritten resume as plain text with proper formatting",
+  "changes_made": [
+    {{"section": "Professional Summary", "original": "old text or N/A", "improved": "new text", "reason": "why this change helps"}},
+    {{"section": "Experience - Job Title", "original": "old bullet", "improved": "new bullet", "reason": "why"}}
+  ],
+  "ats_score_before": 45,
+  "ats_score_after": 82,
+  "tips": [
+    "Additional tip 1 for the candidate",
+    "Additional tip 2"
+  ]
+}}
+
+Make changes_made contain the 8-12 most impactful changes. Keep tips to 3-5 actionable items."""
+
+    try:
+        # the newest OpenAI model is "gpt-5" which was released August 7, 2025.
+        # do not change this unless explicitly requested by the user
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": "You are a professional ATS resume optimization expert. You rewrite resumes to maximize match scores while keeping content truthful. Return only valid JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+            max_completion_tokens=8192,
+        )
+
+        data = json.loads(resp.choices[0].message.content)
         return {"ok": True, "data": data}
 
     except Exception as e:
-        print("OPENAI ERROR:", str(e))
-        return {"error": "OpenAI request failed", "details": str(e)}
+        print(f"REWRITE ERROR: {e}")
+        return {"error": "Resume optimization failed. Please try again.", "details": str(e)}

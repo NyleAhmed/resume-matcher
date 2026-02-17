@@ -3,408 +3,916 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Resume Keyword Matcher</title>
+  <title>Resume ATS Optimizer</title>
   <style>
-    body { font-family: system-ui, Arial; margin: 24px; line-height: 1.4; }
-    h1 { margin-bottom: 6px; }
-    .muted { color: #555; margin-top: 0; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
-    textarea { width: 100%; min-height: 240px; padding: 10px; font-size: 14px; }
-    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
-    button { padding: 10px 14px; font-size: 14px; cursor: pointer; }
-    input[type="number"] { width: 70px; padding: 8px; }
-    label { display: flex; gap: 8px; align-items: center; }
-    .cards { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 16px; }
-    .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
-    .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 12px; margin: 4px 6px 0 0; border: 1px solid #ddd; }
-    .ok { border-color: #b7e4c7; background: #ecfdf3; }
-    .no { border-color: #ffccd5; background: #fff0f3; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
-    .score { font-size: 22px; font-weight: 700; }
-    .small { font-size: 12px; color: #666; }
-    .warn { color: #7c2d12; background:#fff7ed; border:1px solid #fed7aa; padding:10px; border-radius:10px; }
-    .success { color: #14532d; background:#f0fdf4; border:1px solid #bbf7d0; padding:10px; border-radius:10px; }
-    .spinner { display:inline-block; width:14px; height:14px; border:2px solid #ccc; border-top-color:#333; border-radius:50%; animation:spin 1s linear infinite; vertical-align:middle; }
-    @keyframes spin { to { transform:rotate(360deg); } }
-    @media (max-width: 900px) {
-      .grid { grid-template-columns: 1fr; }
-      .cards { grid-template-columns: 1fr; }
+    :root {
+      --bg: #f8f9fb;
+      --surface: #ffffff;
+      --border: #e2e5ea;
+      --text: #1a1d23;
+      --text-secondary: #5f6775;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-light: #eff6ff;
+      --success: #059669;
+      --success-bg: #ecfdf5;
+      --success-border: #a7f3d0;
+      --danger: #dc2626;
+      --danger-bg: #fef2f2;
+      --danger-border: #fecaca;
+      --warning-bg: #fffbeb;
+      --warning-border: #fde68a;
+      --radius: 12px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 6px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.04);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 0;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-icon {
+      width: 36px;
+      height: 36px;
+      background: var(--primary);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 18px;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--primary-light);
+      color: var(--primary);
+      padding: 3px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+    }
+
+    .steps-bar {
+      display: flex;
+      gap: 8px;
+      margin: 24px auto;
+      max-width: 600px;
+      padding: 0 24px;
+    }
+
+    .step-indicator {
+      flex: 1;
+      text-align: center;
+      padding: 10px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .step-indicator.active {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+
+    .step-indicator.done {
+      background: var(--success-bg);
+      color: var(--success);
+      border-color: var(--success-border);
+    }
+
+    .step-panel { display: none; }
+    .step-panel.visible { display: block; }
+
+    .main-content {
+      padding: 24px 0 60px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .card + .card { margin-top: 16px; }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 800px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    label.field-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 280px;
+      padding: 14px;
+      font-size: 14px;
+      font-family: inherit;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      resize: vertical;
+      transition: border-color 0.2s;
+      background: var(--bg);
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .file-upload {
+      margin-top: 12px;
+      padding: 16px;
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-secondary);
+      transition: border-color 0.2s;
+    }
+
+    .file-upload:hover { border-color: var(--primary); }
+
+    .file-upload input[type="file"] {
+      margin-top: 8px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover { background: var(--primary-hover); }
+
+    .btn-primary:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover { background: var(--border); }
+
+    .btn-success {
+      background: var(--success);
+      color: white;
+    }
+
+    .btn-success:hover { background: #047857; }
+
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+
+    .score-display {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      padding: 20px;
+      background: var(--bg);
+      border-radius: var(--radius);
+      margin-bottom: 20px;
+    }
+
+    .score-circle {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .score-low { background: var(--danger-bg); color: var(--danger); border: 3px solid var(--danger-border); }
+    .score-mid { background: var(--warning-bg); color: #d97706; border: 3px solid var(--warning-border); }
+    .score-high { background: var(--success-bg); color: var(--success); border: 3px solid var(--success-border); }
+
+    .score-details h3 { font-size: 18px; margin-bottom: 4px; }
+    .score-details p { color: var(--text-secondary); font-size: 14px; }
+
+    .skill-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .skill-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .skill-found {
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid var(--success-border);
+    }
+
+    .skill-missing {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border: 1px solid var(--danger-border);
+    }
+
+    .change-card {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+      border-left: 3px solid var(--primary);
+    }
+
+    .change-section {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .change-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    @media (max-width: 800px) {
+      .change-row { grid-template-columns: 1fr; }
+    }
+
+    .change-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .change-original .change-label { color: var(--danger); }
+    .change-improved .change-label { color: var(--success); }
+
+    .change-text {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text);
+    }
+
+    .change-reason {
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-style: italic;
+      margin-top: 4px;
+    }
+
+    .optimized-resume {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      font-size: 14px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      font-family: 'Georgia', serif;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    .tip-list {
+      list-style: none;
+      padding: 0;
+    }
+
+    .tip-list li {
+      padding: 10px 14px;
+      background: var(--primary-light);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .tip-icon {
+      flex-shrink: 0;
+      font-size: 16px;
+    }
+
+    .loading-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.85);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .loading-overlay.show {
+      display: flex;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid var(--border);
+      border-top: 4px solid var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .loading-sub {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-secondary);
+    }
+
+    .empty-state p { font-size: 14px; margin-top: 8px; }
+
+    .score-comparison {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      justify-content: center;
+      margin: 20px 0;
+    }
+
+    .score-box {
+      text-align: center;
+      padding: 16px 24px;
+      border-radius: var(--radius);
+    }
+
+    .score-box-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .score-box-value {
+      font-size: 36px;
+      font-weight: 800;
+    }
+
+    .score-arrow {
+      font-size: 28px;
+      color: var(--success);
+    }
+
+    .error-msg {
+      background: var(--danger-bg);
+      border: 1px solid var(--danger-border);
+      color: var(--danger);
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-top: 12px;
+      display: none;
+    }
+
+    .stats-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .stat {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .stat strong {
+      color: var(--text);
     }
   </style>
 </head>
 <body>
-  <h1>Resume Keyword Matcher</h1>
-  <p class="muted">Paste a job description and your resume. This finds important terms from the job post and checks which ones appear in your resume.</p>
 
-  <div class="success">
-    <b>Ready!</b> The backend API is running on this same server. Upload a resume and job description to get started.
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingText">Analyzing your resume...</div>
+    <div class="loading-sub" id="loadingSub">AI is identifying skills and keywords from the job description</div>
   </div>
 
-  <div class="grid">
-    <div>
-      <h3>Job Description</h3>
-      <textarea id="jd" placeholder="Paste the job description here..."></textarea>
-    </div>
-    <div>
-      <h3>Resume</h3>
-      <textarea id="resume" placeholder="Paste your resume here..."></textarea>
-
-      <div style="margin-top:10px;">
-        <label class="small" style="display:block; margin-bottom:6px;">Or upload resume PDF</label>
-        <input id="resumePdf" type="file" accept="application/pdf" />
-        <div class="small">PDF upload uses your backend to extract text.</div>
+  <header class="header">
+    <div class="container header-inner">
+      <div class="logo">
+        <div class="logo-icon">R</div>
+        Resume ATS Optimizer
       </div>
+      <span class="badge">AI-Powered</span>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="steps-bar">
+      <div class="step-indicator active" data-step="1" onclick="goToStep(1)">1. Input</div>
+      <div class="step-indicator" data-step="2" onclick="goToStep(2)">2. Skill Gap</div>
+      <div class="step-indicator" data-step="3" onclick="goToStep(3)">3. Optimize</div>
     </div>
   </div>
 
-  <div class="row">
-    <button id="analyzeBtn">Analyze</button>
-    <button id="aiBtn">Get AI Suggestions</button>
-    <button id="clearBtn">Clear</button>
-    <button id="copyMissingBtn">Copy Missing</button>
+  <main class="main-content">
+    <div class="container">
 
-    <label>
-      Min word length:
-      <input id="minLen" type="number" min="2" max="20" value="3"/>
-    </label>
+      <!-- STEP 1: Input -->
+      <div class="step-panel visible" id="step1">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">Job Description</div>
+            <label class="field-label" for="jd">Paste the full job posting</label>
+            <textarea id="jd" placeholder="Paste the complete job description here including requirements, qualifications, and responsibilities..."></textarea>
+          </div>
+          <div class="card">
+            <div class="card-title">Your Resume</div>
+            <label class="field-label" for="resume">Paste your resume text</label>
+            <textarea id="resume" placeholder="Paste your full resume here, or upload a PDF below..."></textarea>
+            <div class="file-upload">
+              <div>Or upload your resume as a PDF</div>
+              <input id="resumePdf" type="file" accept="application/pdf" />
+            </div>
+          </div>
+        </div>
 
-    <label>
-      Top keywords:
-      <input id="topN" type="number" min="10" max="200" value="40"/>
-    </label>
+        <div class="error-msg" id="errorMsg"></div>
 
-    <label>
-      <input id="includeBigrams" type="checkbox" checked />
-      Include 2-word phrases
-    </label>
-  </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="analyzeBtn" onclick="runAnalysis()">Analyze Skills Match</button>
+          <button class="btn btn-secondary" onclick="clearAll()">Clear All</button>
+        </div>
+      </div>
 
-  <div class="cards">
-    <div class="card">
-      <div class="small">Match Score</div>
-      <div class="score" id="score">—</div>
-      <div class="small" id="scoreDetail"></div>
+      <!-- STEP 2: Skill Gap Analysis -->
+      <div class="step-panel" id="step2">
+        <div class="card">
+          <div class="card-title">Match Score</div>
+          <div class="score-display">
+            <div class="score-circle" id="scoreCircle">--</div>
+            <div class="score-details">
+              <h3 id="scoreTitle">Your ATS Match Score</h3>
+              <p id="scoreSummary">Upload your resume and a job description to see your match.</p>
+              <div class="stats-row">
+                <span class="stat"><strong id="foundCount">0</strong> skills found</span>
+                <span class="stat"><strong id="missingCount">0</strong> skills missing</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title" style="color: var(--success);">Skills Found in Your Resume</div>
+            <div id="foundList" class="skill-list">
+              <div class="empty-state"><p>No results yet</p></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title" style="color: var(--danger);">Missing Skills</div>
+            <div id="missingList" class="skill-list">
+              <div class="empty-state"><p>No results yet</p></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="goToStep(1)">Back to Input</button>
+          <button class="btn btn-primary" id="optimizeBtn" onclick="runOptimize()">Optimize My Resume with AI</button>
+          <button class="btn btn-secondary" onclick="copyMissing()">Copy Missing Skills</button>
+        </div>
+      </div>
+
+      <!-- STEP 3: AI Optimized Resume -->
+      <div class="step-panel" id="step3">
+        <div class="card">
+          <div class="card-title">ATS Score Improvement</div>
+          <div class="score-comparison" id="scoreComparison">
+            <div class="score-box score-low" id="beforeBox">
+              <div class="score-box-label">Before</div>
+              <div class="score-box-value" id="beforeScore">--</div>
+            </div>
+            <div class="score-arrow" id="scoreArrowEl">--</div>
+            <div class="score-box score-high" id="afterBox">
+              <div class="score-box-label">After</div>
+              <div class="score-box-value" id="afterScore">--</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Your Optimized Resume</div>
+          <div class="optimized-resume" id="optimizedResume">
+            <div class="empty-state"><p>Click "Optimize My Resume" to generate your ATS-optimized version.</p></div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-success" onclick="copyOptimized()">Copy Optimized Resume</button>
+            <button class="btn btn-secondary" onclick="downloadOptimized()">Download as Text</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Key Changes Made</div>
+          <div id="changesList">
+            <div class="empty-state"><p>Changes will appear here after optimization.</p></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Additional Tips</div>
+          <ul class="tip-list" id="tipsList">
+            <li class="empty-state"><p>Tips will appear here after optimization.</p></li>
+          </ul>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="goToStep(2)">Back to Analysis</button>
+          <button class="btn btn-secondary" onclick="goToStep(1)">Start Over</button>
+        </div>
+      </div>
+
     </div>
-
-    <div class="card">
-      <div class="small">Found</div>
-      <div class="mono" id="foundCount">—</div>
-    </div>
-
-    <div class="card">
-      <div class="small">Missing</div>
-      <div class="mono" id="missingCount">—</div>
-    </div>
-  </div>
-
-  <div class="grid" style="margin-top:16px;">
-    <div class="card">
-      <h3 style="margin-top:0;">✅ Found Keywords</h3>
-      <div id="foundList"></div>
-    </div>
-    <div class="card">
-      <h3 style="margin-top:0;">❌ Missing Keywords</h3>
-      <div id="missingList"></div>
-    </div>
-  </div>
-
-  <div class="card" style="margin-top:16px;">
-    <h3 style="margin-top:0;">🤖 AI Suggestions</h3>
-    <div class="small" style="margin-bottom:10px;">
-      Uses ChatGPT to recommend improvements + bullet rewrites. (Requires OPENAI_API_KEY set on your backend.)
-    </div>
-    <div id="aiStatus" class="small"></div>
-    <div id="aiOut" style="margin-top:10px;"></div>
-  </div>
+  </main>
 
 <script>
   const API_BASE = "";
+  let analysisData = null;
 
-  window.__missingTerms = [];
-
-  // -------------------------
-  // UI helpers
-  // -------------------------
-  function makePills(container, items, className) {
-    container.innerHTML = "";
-    if (!items.length) {
-      container.innerHTML = `<div class="small">No items.</div>`;
-      return;
-    }
-    for (const term of items) {
-      const span = document.createElement("span");
-      span.className = `pill ${className}`;
-      span.textContent = term;
-      container.appendChild(span);
-    }
+  function showError(msg) {
+    const el = document.getElementById("errorMsg");
+    el.textContent = msg;
+    el.style.display = "block";
   }
 
-  function setStatus(el, html) {
-    el.innerHTML = html || "";
+  function hideError() {
+    document.getElementById("errorMsg").style.display = "none";
   }
 
-  function escapeHtml(s) {
-    return (s || "").replace(/[&<>"']/g, (c) => ({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-    }[c]));
+  function showLoading(title, sub) {
+    document.getElementById("loadingText").textContent = title;
+    document.getElementById("loadingSub").textContent = sub;
+    document.getElementById("loadingOverlay").classList.add("show");
   }
 
-  // -------------------------
-  // Backend calls
-  // -------------------------
-  async function analyzeViaBackendText() {
-    const jdRaw = document.getElementById("jd").value;
-    const resumeRaw = document.getElementById("resume").value;
+  function hideLoading() {
+    document.getElementById("loadingOverlay").classList.remove("show");
+  }
 
-    const minLen = parseInt(document.getElementById("minLen").value, 10) || 3;
-    const topN = parseInt(document.getElementById("topN").value, 10) || 40;
-    const includeBigrams = document.getElementById("includeBigrams").checked;
+  function goToStep(n) {
+    document.querySelectorAll(".step-panel").forEach(p => p.classList.remove("visible"));
+    document.getElementById("step" + n).classList.add("visible");
 
-    const res = await fetch(`${API_BASE}/analyze`, {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ jd: jdRaw, resume: resumeRaw, minLen, topN, includeBigrams })
+    document.querySelectorAll(".step-indicator").forEach(s => {
+      const sn = parseInt(s.dataset.step);
+      s.classList.remove("active", "done");
+      if (sn === n) s.classList.add("active");
+      else if (sn < n) s.classList.add("done");
     });
-    if (!res.ok) throw new Error("Analyze failed");
-    return await res.json();
   }
 
-  async function analyzeViaBackendPdf() {
-    const jdRaw = document.getElementById("jd").value;
+  function getScoreClass(pct) {
+    if (pct >= 70) return "score-high";
+    if (pct >= 40) return "score-mid";
+    return "score-low";
+  }
 
-    const minLen = parseInt(document.getElementById("minLen").value, 10) || 3;
-    const topN = parseInt(document.getElementById("topN").value, 10) || 40;
-    const includeBigrams = document.getElementById("includeBigrams").checked;
-
+  async function runAnalysis() {
+    hideError();
+    const jd = document.getElementById("jd").value.trim();
+    const resumeEl = document.getElementById("resume");
+    let resume = resumeEl.value.trim();
     const pdfFile = document.getElementById("resumePdf").files[0];
-    if (!pdfFile) throw new Error("No PDF selected");
 
-    const form = new FormData();
-    form.append("jd", jdRaw);
-    form.append("minLen", String(minLen));
-    form.append("topN", String(topN));
-    form.append("includeBigrams", String(includeBigrams));
-    form.append("resume_pdf", pdfFile);
+    if (!jd) { showError("Please paste a job description."); return; }
 
-    const res = await fetch(`${API_BASE}/analyze_pdf`, { method:"POST", body: form });
-    if (!res.ok) throw new Error("Analyze PDF failed");
-    return await res.json();
+    if (pdfFile && !resume) {
+      showLoading("Extracting PDF...", "Reading text from your resume PDF");
+      try {
+        const fd = new FormData();
+        fd.append("resume_pdf", pdfFile);
+        const resp = await fetch(API_BASE + "/extract_pdf", { method: "POST", body: fd });
+        const data = await resp.json();
+        if (data.error) {
+          hideLoading();
+          showError(data.error);
+          return;
+        }
+        resume = data.text;
+        resumeEl.value = resume;
+      } catch (e) {
+        hideLoading();
+        showError("Failed to extract PDF. Please paste your resume text instead.");
+        return;
+      }
+    }
+
+    if (!resume) { showError("Please paste your resume or upload a PDF."); return; }
+
+    showLoading("Analyzing skills match...", "AI is identifying real skills, technologies, and tools from the job description");
+
+    try {
+      const resp = await fetch(API_BASE + "/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jd, resume })
+      });
+
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.detail || "Analysis failed");
+      }
+
+      analysisData = await resp.json();
+      renderAnalysis(analysisData);
+      hideLoading();
+      goToStep(2);
+    } catch (e) {
+      hideLoading();
+      showError(e.message || "Analysis failed. Please try again.");
+      console.error(e);
+    }
   }
 
-  function renderAnalyzeResult(data) {
+  function renderAnalysis(data) {
+    const score = data.score_pct || 0;
     const found = data.found || [];
     const missing = data.missing || [];
-    const total = (data.keywords || []).length || (found.length + missing.length) || 1;
-    const scorePct = data.scorePct ?? Math.round((found.length / total) * 100);
 
-    document.getElementById("score").textContent = `${scorePct}%`;
-    document.getElementById("scoreDetail").textContent = `${found.length} / ${total} key terms matched`;
+    const circle = document.getElementById("scoreCircle");
+    circle.textContent = score + "%";
+    circle.className = "score-circle " + getScoreClass(score);
+
+    const title = document.getElementById("scoreTitle");
+    if (score >= 70) title.textContent = "Strong match! Your resume aligns well.";
+    else if (score >= 40) title.textContent = "Decent match, but there are gaps to fill.";
+    else title.textContent = "Low match. Your resume needs significant optimization.";
+
+    document.getElementById("scoreSummary").textContent =
+      `${found.length} of ${found.length + missing.length} required skills found in your resume.`;
 
     document.getElementById("foundCount").textContent = found.length;
     document.getElementById("missingCount").textContent = missing.length;
 
-    makePills(document.getElementById("foundList"), found, "ok");
-    makePills(document.getElementById("missingList"), missing, "no");
+    const foundList = document.getElementById("foundList");
+    foundList.innerHTML = found.length
+      ? found.map(s => `<span class="skill-tag skill-found">${esc(s)}</span>`).join("")
+      : '<div class="empty-state"><p>No matching skills found</p></div>';
 
-    window.__missingTerms = missing;
+    const missingList = document.getElementById("missingList");
+    missingList.innerHTML = missing.length
+      ? missing.map(s => `<span class="skill-tag skill-missing">${esc(s)}</span>`).join("")
+      : '<div class="empty-state"><p>All skills matched!</p></div>';
   }
 
-async function analyze() {
-  const pdfFile = document.getElementById("resumePdf").files[0];
-  const jdRaw = document.getElementById("jd").value.trim();
-  const resumeEl = document.getElementById("resume");
-  const resumeRaw = resumeEl.value.trim();
-
-  if (!jdRaw) return alert("Paste a Job Description first.");
-
-  // PDF selected → analyze via backend PDF and auto-fill resume box
-  if (pdfFile) {
-    const data = await analyzeViaBackendPdf();
-
-    // ✅ NEW: auto-fill resume textarea from PDF extraction
-    if (data.resume_text && typeof data.resume_text === "string") {
-      resumeEl.value = data.resume_text;
-    }
-
-    renderAnalyzeResult(data);
-    return;
-  }
-
-  // No PDF → fallback to pasted resume text
-  if (!resumeRaw) return alert("Paste your resume OR upload a PDF.");
-  const data = await analyzeViaBackendText();
-  renderAnalyzeResult(data);
-}
-
-  async function getAiSuggestions() {
-    const aiStatus = document.getElementById("aiStatus");
-    const aiOut = document.getElementById("aiOut");
-
+  async function runOptimize() {
     const jd = document.getElementById("jd").value.trim();
-    let resume = document.getElementById("resume").value.trim();
+    const resume = document.getElementById("resume").value.trim();
+    const missing = analysisData ? (analysisData.missing || []) : [];
 
-    if (!jd) return alert("Paste a Job Description first.");
-
-    // If user uploaded PDF and resume textarea is empty, it's okay — they can still click after Analyze.
-    // But AI endpoint needs resume text; easiest path: require resume text present OR tell them to paste it.
-if (!resume) {
-  const pdfFile = document.getElementById("resumePdf").files[0];
-
-  // ✅ NEW: if PDF exists, extract text automatically
-  if (pdfFile) {
-    setStatus(aiStatus, `<span class="spinner"></span> Extracting resume from PDF...`);
-    aiOut.innerHTML = "";
-
-    const data = await analyzeViaBackendPdf();
-
-    if (data.resume_text && typeof data.resume_text === "string" && data.resume_text.trim()) {
-      resume = data.resume_text.trim();
-      document.getElementById("resume").value = resume;
-
-      // Optional: refresh keyword results too
-      renderAnalyzeResult(data);
-
-    } else {
-      setStatus(aiStatus, `<div class="warn">Could not extract text from this PDF. Try exporting a text-based PDF.</div>`);
+    if (!jd || !resume) {
+      alert("Please go back and enter a job description and resume first.");
       return;
     }
-  } else {
-    alert("Upload a PDF resume first (or paste resume text).");
-    return;
+
+    showLoading("Optimizing your resume...", "AI is rewriting your resume line-by-line to maximize ATS match score");
+
+    try {
+      const resp = await fetch(API_BASE + "/rewrite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jd, resume, missing_skills: missing })
+      });
+
+      const result = await resp.json();
+
+      if (result.error) {
+        hideLoading();
+        alert(result.error);
+        return;
+      }
+
+      const data = result.data || {};
+      renderOptimized(data);
+      hideLoading();
+      goToStep(3);
+    } catch (e) {
+      hideLoading();
+      alert("Optimization failed. Please try again.");
+      console.error(e);
+    }
   }
-}
 
-    setStatus(aiStatus, `<span class="spinner"></span> Generating suggestions...`);
-    aiOut.innerHTML = "";
+  function renderOptimized(data) {
+    const before = data.ats_score_before || 0;
+    const after = data.ats_score_after || 0;
 
-    const payload = {
-      jd,
-      resume,
-      missing: window.__missingTerms || [],
-      level: "intern",
-      tone: "confident",
-      max_bullets: 6
-    };
+    document.getElementById("beforeScore").textContent = before + "%";
+    document.getElementById("afterScore").textContent = after + "%";
 
-    const res = await fetch(`${API_BASE}/suggest`, {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify(payload)
-    });
+    const beforeBox = document.getElementById("beforeBox");
+    beforeBox.className = "score-box " + getScoreClass(before);
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setStatus(aiStatus, `<div class="warn">AI request failed. Please check the server logs.</div>`);
-      return;
-    }
+    const afterBox = document.getElementById("afterBox");
+    afterBox.className = "score-box " + getScoreClass(after);
 
-    // Backend returns { ok: true, data: {...} } OR an error object
-    if (data.error) {
-      setStatus(aiStatus, `<div class="warn"><b>${escapeHtml(data.error)}</b><br><span class="small">${escapeHtml(data.how_to_fix || "")}</span></div>`);
-      return;
-    }
+    const arrowEl = document.getElementById("scoreArrowEl");
+    const diff = after - before;
+    arrowEl.textContent = diff > 0 ? "+" + diff + "%" : diff + "%";
+    arrowEl.style.color = diff > 0 ? "var(--success)" : "var(--danger)";
 
-    setStatus(aiStatus, `<div class="success">Done ✅</div>`);
+    document.getElementById("optimizedResume").textContent = data.optimized_resume || "No optimized resume generated.";
 
-    const out = data.data || {};
-    if (out.raw) {
-      aiOut.innerHTML = `<pre class="mono" style="white-space:pre-wrap;">${escapeHtml(out.raw)}</pre>`;
-      return;
-    }
-
-    // Pretty render JSON keys
-    aiOut.innerHTML = `
-      <div><b>${escapeHtml(out.headline || "Suggestions")}</b></div>
-      <div style="margin-top:8px;"><b>Overall feedback</b><div class="small">${escapeHtml(out.overall_feedback || "")}</div></div>
-
-      <div style="margin-top:10px;"><b>Top gaps</b>
-        <ul class="small">
-          ${(out.top_gaps || []).map(x => `<li>${escapeHtml(x)}</li>`).join("")}
-        </ul>
-      </div>
-
-      <div style="margin-top:10px;"><b>Keyword plan</b>
-        <ul class="small">
-          ${(out.keyword_plan || []).map(x => `<li>${escapeHtml(x)}</li>`).join("")}
-        </ul>
-      </div>
-
-      <div style="margin-top:10px;"><b>Rewrite examples</b>
-        ${(out.rewrite_examples || []).map(pair => `
-          <div class="card" style="margin-top:8px;">
-            <div class="small"><b>BEFORE</b></div>
-            <div class="mono" style="white-space:pre-wrap;">${escapeHtml(pair.before || "")}</div>
-            <div class="small" style="margin-top:6px;"><b>AFTER</b></div>
-            <div class="mono" style="white-space:pre-wrap;">${escapeHtml(pair.after || "")}</div>
-            <div class="small" style="margin-top:6px;"><b>Why</b> ${escapeHtml(pair.why_it_works || "")}</div>
+    const changes = data.changes_made || [];
+    const changesEl = document.getElementById("changesList");
+    if (changes.length) {
+      changesEl.innerHTML = changes.map(c => `
+        <div class="change-card">
+          <div class="change-section">${esc(c.section || "General")}</div>
+          <div class="change-row">
+            <div class="change-original">
+              <div class="change-label">Original</div>
+              <div class="change-text">${esc(c.original || "N/A")}</div>
+            </div>
+            <div class="change-improved">
+              <div class="change-label">Improved</div>
+              <div class="change-text">${esc(c.improved || c.after || "")}</div>
+            </div>
           </div>
-        `).join("")}
-      </div>
+          <div class="change-reason">${esc(c.reason || c.why_it_works || "")}</div>
+        </div>
+      `).join("");
+    } else {
+      changesEl.innerHTML = '<div class="empty-state"><p>No detailed changes available.</p></div>';
+    }
 
-      <div style="margin-top:10px;"><b>ATS checks</b>
-        <ul class="small">
-          ${(out.ats_checks || []).map(x => `<li>${escapeHtml(x)}</li>`).join("")}
-        </ul>
-      </div>
-
-      <div style="margin-top:10px;"><b>Next steps</b>
-        <ol class="small">
-          ${(out.next_steps || []).map(x => `<li>${escapeHtml(x)}</li>`).join("")}
-        </ol>
-      </div>
-    `;
+    const tips = data.tips || [];
+    const tipsEl = document.getElementById("tipsList");
+    if (tips.length) {
+      tipsEl.innerHTML = tips.map(t => `
+        <li><span class="tip-icon">*</span> ${esc(t)}</li>
+      `).join("");
+    } else {
+      tipsEl.innerHTML = '<li class="empty-state"><p>No additional tips.</p></li>';
+    }
   }
 
-  // -------------------------
-  // Events
-  // -------------------------
-  document.getElementById("analyzeBtn").addEventListener("click", async () => {
-    try {
-      await analyze();
-    } catch (e) {
-      alert("Analyze failed. Please check the server logs.");
-      console.error(e);
+  function copyMissing() {
+    if (!analysisData || !analysisData.missing || !analysisData.missing.length) {
+      alert("No missing skills to copy.");
+      return;
     }
-  });
+    const text = analysisData.missing.join(", ");
+    navigator.clipboard.writeText(text).then(() => alert("Missing skills copied!")).catch(() => alert("Could not copy. Please select and copy manually."));
+  }
 
-  document.getElementById("aiBtn").addEventListener("click", async () => {
-    try {
-      await getAiSuggestions();
-    } catch (e) {
-      alert("AI suggestions failed. Check that OPENAI_API_KEY is set.");
-      console.error(e);
+  function copyOptimized() {
+    const text = document.getElementById("optimizedResume").textContent;
+    if (!text || text.includes("Click")) {
+      alert("No optimized resume to copy yet.");
+      return;
     }
-  });
+    navigator.clipboard.writeText(text).then(() => alert("Optimized resume copied!")).catch(() => alert("Could not copy. Please select and copy manually."));
+  }
 
-  document.getElementById("clearBtn").addEventListener("click", () => {
+  function downloadOptimized() {
+    const text = document.getElementById("optimizedResume").textContent;
+    if (!text || text.includes("Click")) {
+      alert("No optimized resume to download yet.");
+      return;
+    }
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "optimized_resume.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function clearAll() {
     document.getElementById("jd").value = "";
     document.getElementById("resume").value = "";
     document.getElementById("resumePdf").value = "";
-    document.getElementById("score").textContent = "—";
-    document.getElementById("scoreDetail").textContent = "";
-    document.getElementById("foundCount").textContent = "—";
-    document.getElementById("missingCount").textContent = "—";
-    document.getElementById("foundList").innerHTML = "";
-    document.getElementById("missingList").innerHTML = "";
-    document.getElementById("aiStatus").innerHTML = "";
-    document.getElementById("aiOut").innerHTML = "";
-    window.__missingTerms = [];
-  });
+    hideError();
+    analysisData = null;
+    goToStep(1);
+  }
 
-  document.getElementById("copyMissingBtn").addEventListener("click", async () => {
-    const missing = window.__missingTerms || [];
-    const text = missing.join("\n");
-    if (!text) {
-      alert("No missing terms to copy yet.");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      alert("Missing terms copied!");
-    } catch (e) {
-      alert("Clipboard failed. You can manually select and copy from the Missing list.");
-    }
-  });
+  function esc(s) {
+    const d = document.createElement("div");
+    d.textContent = s || "";
+    return d.innerHTML;
+  }
 </script>
 </body>
 </html>
